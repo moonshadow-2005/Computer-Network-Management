@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>第 2 组 · 实验网络管理</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script defer src="/static/app.js"></script>
+</head>
+<body>
+  <header>
+    <div class="head-inner">
+      <div><p class="eyebrow">课程设计 · 第 2 组</p><h1>实验网络管理系统</h1>
+        <p class="subtitle">故障 · 配置 · 性能 · 计费 · 安全</p></div>
+      <div class="header-actions"><span id="health" class="chip">检查运行状态…</span><button id="refresh">刷新数据</button></div>
+    </div>
+  </header>
+  <main>
+    <div id="notice" class="notice">正在读取数据。初始设备清单来自课程文档；实际采样会单独标明来源和时间。</div>
+    <section class="summary" aria-label="概览">
+      <div class="card"><span>设备候选</span><strong id="count-devices">—</strong></div>
+      <div class="card"><span>接口</span><strong id="count-interfaces">—</strong></div>
+      <div class="card"><span>活跃故障</span><strong id="count-events">—</strong></div>
+      <div class="card"><span>开放风险</span><strong id="count-risks">—</strong></div>
+    </section>
+    <nav aria-label="管理功能">
+      <a href="#fault">故障</a><a href="#config">配置</a><a href="#performance">性能</a>
+      <a href="#accounting">计费</a><a href="#security">安全</a><a href="#operations">运行</a>
+    </nav>
+    <section id="fault" class="panel">
+      <div class="section-head"><h2>故障管理</h2><p>连续 3 次完整丢包后形成告警；查询失败保持未知。</p></div>
+      <div class="form-row"><label>设备筛选 <select id="fault-device"></select></label></div>
+      <p id="fault-filter-summary" class="footer-note" role="status">正在读取故障与连通性历史…</p>
+      <h3>告警、确认与恢复</h3>
+      <p class="footer-note">告警确认需先在“运行与采集”区域填写管理令牌；确认记录与 active/recovered 恢复状态分别保存。</p>
+      <div id="events" class="table-wrap"></div>
+      <h3>最近的连通性样本</h3><div id="ping" class="table-wrap"></div>
+    </section>
+    <section id="config" class="panel">
+      <div class="section-head"><h2>配置管理</h2><p>地址先按候选对象保存，不能从地址数量推断物理设备数量。</p></div>
+      <h3>设备</h3><div id="devices" class="table-wrap"></div>
+      <h3>接口</h3><div id="interfaces" class="table-wrap"></div>
+      <h3>路由</h3><div id="routes" class="table-wrap"></div>
+      <h3>配置快照比较</h3>
+      <form id="config-diff-form" class="form-row">
+        <label>设备 <select id="config-diff-device" required></select></label>
+        <label>较早快照 <select id="config-diff-before" required></select></label>
+        <label>较新快照 <select id="config-diff-after" required></select></label>
+        <button id="config-diff-submit" type="submit" disabled>比较快照</button>
+      </form>
+      <p id="config-diff-note" class="footer-note" role="status">正在读取配置快照…</p>
+      <div id="config-diff-summary" class="result" aria-live="polite"></div>
+      <div id="config-diff-changes" class="table-wrap"></div>
+      <details><summary>逻辑拓扑与快照</summary><p id="topology-summary"></p><div id="snapshots" class="table-wrap"></div></details>
+    </section>
+    <section id="performance" class="panel">
+      <div class="section-head"><h2>性能管理</h2><p>展示端到端 RTT、丢包和接口方向速率历史；无效采样保留在表格中但不连入趋势线。接口方向速率使用有效的相邻 64 位字节计数样本计算，参考速率未知时利用率留空。</p></div>
+      <h3>端到端时延与丢包趋势</h3>
+      <div class="form-row">
+        <label>测试主机 <select id="ping-trend-device"></select></label>
+      </div>
+      <p id="ping-trend-summary" class="footer-note" role="status">正在读取 ping 历史…</p>
+      <div class="chart-grid">
+        <section class="chart-card"><h4>往返时延（ms）</h4><div id="ping-rtt-chart"></div></section>
+        <section class="chart-card"><h4>丢包率（%）</h4><div id="ping-loss-chart"></div></section>
+      </div>
+      <h3>端到端样本明细</h3><div id="ping-trend-history" class="table-wrap"></div>
+      <h3>接口方向速率趋势</h3>
+      <div class="form-row">
+        <label>接口 <select id="metric-trend-interface"></select></label>
+      </div>
+      <p id="metric-trend-summary" class="footer-note" role="status">正在读取接口速率历史…</p>
+      <section class="chart-card"><h4>入方向与出方向（bit/s）</h4><div id="metric-rate-chart"></div></section>
+      <h3>接口速率样本明细</h3><div id="metrics" class="table-wrap"></div>
+      <h3>受控 iperf3 测试</h3>
+      <form id="iperf-form" class="form-row">
+        <label>客户端 <select id="iperf-client"><option value="host-1">子网 1 主机</option><option value="host-2">子网 2 主机</option><option value="host-3">子网 3 主机</option></select></label>
+        <label>服务端 <select id="iperf-server"><option value="host-2">子网 2 主机</option><option value="host-1">子网 1 主机</option><option value="host-3">子网 3 主机</option></select></label>
+        <button type="submit">开始 2 秒 / 10 Mbit/s 测试</button>
+      </form>
+      <p id="iperf-result" role="status"></p><div id="tasks" class="table-wrap"></div>
+    </section>
+    <section id="accounting" class="panel">
+      <div class="section-head"><h2>计费管理</h2><p>当前实现接口方向流量统计，完整性和缺口与结果一起显示。</p></div>
+      <form id="traffic-form" class="form-row">
+        <label>接口 <select id="traffic-interface" required><option value="">先等待接口采样</option></select></label>
+        <label>方向 <select id="traffic-direction"><option value="both">入方向与出方向</option><option value="in">仅入方向</option><option value="out">仅出方向</option></select></label>
+        <label>起始（北京时间） <input id="traffic-from" type="datetime-local" step="1" required></label>
+        <label>结束（北京时间） <input id="traffic-to" type="datetime-local" step="1" required></label>
+        <button type="submit">统计流量</button>
+      </form>
+      <div id="traffic-result" class="result">请选择接口和时间范围。</div>
+      <a id="traffic-csv" hidden>下载相同窗口的 CSV</a>
+    </section>
+    <section id="security" class="panel">
+      <div class="section-head"><h2>安全管理</h2><p>服务变化或连续 3 次有效采样超过 80% 接口利用率会形成风险线索；端口不可达表示状态未知，不等于关闭；不据此判断攻击来源。</p></div>
+      <form id="baseline-form" class="form-row">
+        <label>对象 <select id="baseline-device"><option value="host-1">子网 1 主机</option><option value="host-2">子网 2 主机</option><option value="host-3">子网 3 主机</option></select></label>
+        <label>TCP 端口 <input id="baseline-port" type="number" min="1" max="65535" value="5201" required></label>
+        <label>预期开放 <select id="baseline-allowed"><option value="false">否</option><option value="true">是</option></select></label>
+        <label>说明 <input id="baseline-note" type="text" maxlength="200" placeholder="此基线的依据"></label>
+        <button type="submit">保存基线</button><button id="probe-service" type="button">检查此端口</button>
+      </form>
+      <p id="baseline-current" class="footer-note" role="status">正在读取所选端口的已保存基线…</p>
+      <p id="security-result" role="status"></p>
+      <h3>服务基线</h3><div id="baselines" class="table-wrap"></div>
+      <h3>最近端口检查</h3><div id="service-checks" class="table-wrap"></div>
+      <h3>风险记录</h3><div id="risks" class="table-wrap"></div>
+      <div class="form-row"><label>风险编号 <input id="risk-id" type="number" min="1" placeholder="查看风险表中的编号"></label>
+        <button id="ack-risk" type="button">确认已知悉</button></div>
+    </section>
+    <section id="operations" class="panel">
+      <div class="section-head"><h2>运行与采集</h2><p>采集只在显式启用的实验环境运行。管理令牌仅用于本次浏览器会话，不保存。</p></div>
+      <div class="form-row">
+        <label>管理令牌 <input id="admin-token" type="password" autocomplete="off" placeholder="NMS_API_TOKEN"></label>
+        <button id="collect" type="button">执行一轮只读采集</button>
+      </div>
+      <p id="operation-result" role="status"></p>
+      <h3>最近采集</h3><div id="runs" class="table-wrap"></div>
+      <p class="footer-note">API 结构见 <a href="/openapi.json">/openapi.json</a>。时间统一以 UTC 保存，页面按本地时区显示。</p>
+    </section>
+  </main>
+</body>
+</html>

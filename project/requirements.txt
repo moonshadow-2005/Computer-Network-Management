@@ -1,0 +1,2 @@
+# Runtime dependencies, pinned to the tested versions.
+-r deploy/requirements-runtime.lock

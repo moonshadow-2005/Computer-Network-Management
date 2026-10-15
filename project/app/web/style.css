@@ -1,0 +1,32 @@
+:root{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;color:#20354b;background:#f2f6fa}
+*{box-sizing:border-box}body{margin:0}header{background:#12304c;color:white;padding:2.5rem 1.2rem 2rem}
+.head-inner,main{max-width:1200px;margin:auto}.head-inner{display:flex;justify-content:space-between;gap:1.5rem;align-items:end}
+h1{font-size:clamp(1.8rem,3vw,2.7rem);margin:.2rem 0}.eyebrow{color:#9bd8ee;letter-spacing:.12em;font-size:.8rem;margin:0}
+.subtitle{color:#c7d6e3;margin:.4rem 0}.header-actions{display:flex;gap:.7rem;align-items:center;flex-wrap:wrap}
+button{background:#097c9e;color:white;border:0;border-radius:8px;padding:.65rem .95rem;font:inherit;cursor:pointer}
+button:hover{background:#076984}button:disabled{opacity:.55;cursor:wait}.chip{border:1px solid #7ba2ba;border-radius:999px;padding:.35rem .7rem;font-size:.82rem}
+main{padding:1.2rem}.notice{background:#e5f2f6;border-left:4px solid #1592ac;padding:.9rem 1.1rem;border-radius:5px}
+.summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.8rem;margin:1rem 0}.card,.panel{background:white;border:1px solid #d9e3ec;border-radius:12px;box-shadow:0 2px 6px #12304c0c}
+.card{padding:1rem}.card span{display:block;color:#5c7385;font-size:.87rem}.card strong{font-size:1.8rem;font-variant-numeric:tabular-nums}
+nav{display:flex;gap:.5rem;flex-wrap:wrap;margin:1.1rem 0}nav a{background:#dcecf3;text-decoration:none;border-radius:7px;padding:.55rem .85rem;color:#174b64;font-weight:600}
+nav a:hover{background:#c3e0ec}.panel{padding:1.35rem;margin:1rem 0;scroll-margin-top:1rem}.section-head{border-bottom:1px solid #e4eaf0;margin-bottom:1rem}
+h2{margin:0 0 .3rem;font-size:1.4rem}h3{font-size:1rem;margin:1.25rem 0 .5rem}.section-head p,.footer-note{color:#5b7183;margin:.2rem 0 1rem}
+.table-wrap{overflow:auto}table{width:100%;border-collapse:collapse;font-size:.88rem;min-width:570px}th,td{text-align:left;padding:.65rem .55rem;border-bottom:1px solid #e7edf2;vertical-align:top}
+th{color:#50697d;background:#f6f9fb;font-weight:600;white-space:nowrap}td{max-width:360px;overflow-wrap:anywhere}.empty{padding:.8rem;background:#f7f9fb;color:#607486;border-radius:6px}
+.badge{display:inline-block;background:#e7eef5;color:#34556e;padding:.18rem .48rem;border-radius:5px;font-size:.79rem;white-space:nowrap}
+.badge.live,.badge.ok,.badge.recovered{background:#ddf4e9;color:#116548}.badge.document,.badge.partial{background:#fff0d0;color:#80590a}
+.badge.error,.badge.active,.badge.open{background:#fce5e2;color:#a34238}.form-row{display:flex;gap:.8rem;align-items:end;flex-wrap:wrap;margin:.8rem 0 1rem}
+.badge.unavailable{background:#fff0d0;color:#80590a}.badge.closed{background:#e7eef5;color:#34556e}
+label{display:grid;gap:.3rem;color:#52677a;font-size:.85rem}input,select{font:inherit;padding:.55rem .6rem;border:1px solid #bdcbd7;border-radius:6px;min-height:39px;background:white;color:#22394e}
+.result{background:#f7f9fb;border-radius:6px;padding:.85rem;white-space:pre-wrap}.result strong{display:block;margin-bottom:.4rem}
+.chart-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.9rem;margin:.8rem 0}
+.chart-card{min-width:0;border:1px solid #d9e3ec;border-radius:9px;padding:.8rem;background:#fbfcfd}
+.chart-card h4{margin:0 0 .5rem;font-size:.95rem;color:#405b70}
+.chart-card svg{display:block;width:100%;height:auto;min-height:180px;overflow:visible}
+.chart-gridline{stroke:#e0e8ee;stroke-width:1}.chart-axis-line{stroke:#9aabb8;stroke-width:1}
+.chart-axis{fill:#5d7181;font-size:11px;font-variant-numeric:tabular-nums}
+.chart-legend{display:flex;gap:1rem;flex-wrap:wrap;margin:.2rem .2rem .5rem;color:#4c6172;font-size:.82rem}
+.chart-legend-item{display:inline-flex;align-items:center;gap:.4rem}
+.chart-legend-item::before{content:"";width:1.1rem;height:3px;border-radius:2px;background:var(--series-color)}
+details{margin-top:1.2rem}summary{cursor:pointer;color:#096f92;font-weight:600}a{color:#0b7396}
+@media(max-width:700px){.head-inner{display:block}.header-actions{margin-top:1.3rem}.summary{grid-template-columns:repeat(2,minmax(0,1fr))}.chart-grid{grid-template-columns:1fr}.panel{padding:1rem}}

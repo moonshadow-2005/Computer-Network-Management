@@ -1,0 +1,11 @@
+*.md text
+*.py text
+*.json text
+*.ps1 text
+*.txt text
+*.pptx binary
+*.pdf binary
+*.png binary
+*.PNG binary
+*.sh text eol=lf
+*.yml text eol=lf
