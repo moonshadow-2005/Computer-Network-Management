@@ -9,11 +9,51 @@ let metricTrendRequestId = 0;
 let faultHistoryRequestId = 0;
 let cachedBaselines = [];
 let baselineInitialized = false;
+let currentHealth = null;
+
+const networkActions = {
+  collect: {button:'collect', note:'collect-availability', label:'真实采集',
+    help:'本地模式展示已有样例；采集新网络数据需要连接并启用实验环境。'},
+  probe: {button:'probe-service', note:'probe-availability', label:'真实端口检查', flag:'service_probe_enabled',
+    help:'本地模式可以保存基线；实际检查端口需要连接并启用实验环境。'},
+  iperf: {button:'iperf-start', note:'iperf-availability', label:'真实 iperf3 测试', flag:'iperf3_enabled',
+    help:'本地模式只展示预置样例结果；真实测试需要实验网连接和两端 SSH 配置。'},
+};
+
+function networkActionReason(name) {
+  const action = networkActions[name];
+  if (!currentHealth) return '无法确认功能是否已启用，请刷新数据后重试。';
+  if (!currentHealth.live_enabled || (action.flag && !currentHealth[action.flag])) {
+    return `当前未启用${action.label}。${action.help}`;
+  }
+  return '';
+}
+
+function updateNetworkControls(health) {
+  currentHealth = health;
+  for (const [name, action] of Object.entries(networkActions)) {
+    const reason = networkActionReason(name);
+    $(action.button).disabled = Boolean(reason);
+    $(action.button).setAttribute('title', reason);
+    $(action.note).textContent = reason || `${action.label}已启用；操作前请填写管理令牌。`;
+  }
+}
 
 async function api(path, options = {}) {
+  if (options.method?.toUpperCase() === 'POST' && !options.headers?.['X-Admin-Token']?.trim()) {
+    throw new Error('请先在页面底部“运行与采集 → 管理令牌”填写启动服务时设置的令牌。');
+  }
   const response = await fetch(base + path, options);
   const body = await response.json();
-  if (!response.ok || body.status !== 'ok') throw new Error(body.error?.message || `HTTP ${response.status}`);
+  if (!response.ok || body.status !== 'ok') {
+    if (response.status === 401) {
+      throw new Error('管理令牌不正确，请在“运行与采集”填写与启动服务时 NMS_API_TOKEN 相同的值；刷新或重新打开页面后需要重新填写。');
+    }
+    if (response.status === 503 && body.error?.message === 'write operations require NMS_API_TOKEN') {
+      throw new Error('当前服务未启用管理写入。本地交互测试请使用 local 模式并设置管理令牌。');
+    }
+    throw new Error(body.error?.message || `HTTP ${response.status}`);
+  }
   return body.data;
 }
 function localTime(value) { return value ? new Date(value).toLocaleString('zh-CN') : '未知'; }
@@ -383,7 +423,9 @@ async function refresh() {
     if (healthResult.status === 'fulfilled') {
       liveEnabled = healthResult.value.live_enabled;
       $('health').textContent = liveEnabled ? '实时采集已启用' : '实时采集未启用';
+      updateNetworkControls(healthResult.value);
     } else {
+      updateNetworkControls(null);
       failures.push('运行状态');
       failed('health', healthResult.reason);
     }
@@ -479,7 +521,8 @@ async function refresh() {
     setOptions(faultSelect, faultOptions, previousFaultDevice, item => item.label);
     await loadFaultHistory(faultSelect.value);
     if (!isCurrent()) return;
-    const pingDevices = devices.items.filter(item => item.role === 'test-host');
+    const pingDevices = devices.items.filter(item => item.role === 'test-host' ||
+      (item.role === 'sample' && item.device_id.startsWith('sample-host-')));
     const pingSelect = $('ping-trend-device');
     const previousPingDevice = pingSelect.value;
     setOptions(pingSelect, pingDevices.map(item => ({value:item.device_id,
@@ -569,16 +612,21 @@ $('traffic-form').addEventListener('submit', async event => {
   } catch (error) { $('traffic-result').textContent = `统计失败：${error.message}`; }
 });
 $('collect').addEventListener('click', async () => {
+  const reason = networkActionReason('collect');
+  if (reason) { $('operation-result').textContent = reason; return; }
   $('collect').disabled = true; $('operation-result').textContent = '正在采集…';
   try {
     const result = await api('/collect', {method:'POST', headers:{'Content-Type':'application/json',
       'X-Admin-Token':$('admin-token').value}, body:'{}'});
     $('operation-result').textContent = `采集 #${result.run_id}：${result.state}`; await refresh();
   } catch (error) { $('operation-result').textContent = `采集失败：${error.message}`; }
-  finally { $('collect').disabled = false; }
+  finally { $('collect').disabled = Boolean(networkActionReason('collect')); }
 });
 $('iperf-form').addEventListener('submit', async event => {
-  event.preventDefault(); $('iperf-result').textContent = '正在创建任务…';
+  event.preventDefault();
+  const reason = networkActionReason('iperf');
+  if (reason) { $('iperf-result').textContent = reason; return; }
+  $('iperf-result').textContent = '正在创建任务…';
   try {
     const task = await api('/tasks/iperf3', {method:'POST', headers:{'Content-Type':'application/json',
       'X-Admin-Token':$('admin-token').value}, body:JSON.stringify({client_device_id:$('iperf-client').value,
@@ -593,12 +641,15 @@ $('baseline-form').addEventListener('submit', async event => {
       'X-Admin-Token':$('admin-token').value}, body:JSON.stringify({device_id:$('baseline-device').value,
         port:Number($('baseline-port').value),allowed:$('baseline-allowed').value === 'true',
         note:$('baseline-note').value.trim()})});
+    baselineInitialized = false;
     $('security-result').textContent = '基线已保存。'; await refresh();
   } catch (error) { $('security-result').textContent = `保存失败：${error.message}`; }
 });
 $('baseline-device').addEventListener('change', syncBaselineForm);
 $('baseline-port').addEventListener('change', syncBaselineForm);
 $('probe-service').addEventListener('click', async () => {
+  const reason = networkActionReason('probe');
+  if (reason) { $('security-result').textContent = reason; return; }
   $('security-result').textContent = '正在检查指定端口…';
   try {
     const result = await api('/security/probe', {method:'POST', headers:{'Content-Type':'application/json',

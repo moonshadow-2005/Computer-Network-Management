@@ -4,7 +4,7 @@
 h1{font-size:clamp(1.8rem,3vw,2.7rem);margin:.2rem 0}.eyebrow{color:#9bd8ee;letter-spacing:.12em;font-size:.8rem;margin:0}
 .subtitle{color:#c7d6e3;margin:.4rem 0}.header-actions{display:flex;gap:.7rem;align-items:center;flex-wrap:wrap}
 button{background:#097c9e;color:white;border:0;border-radius:8px;padding:.65rem .95rem;font:inherit;cursor:pointer}
-button:hover{background:#076984}button:disabled{opacity:.55;cursor:wait}.chip{border:1px solid #7ba2ba;border-radius:999px;padding:.35rem .7rem;font-size:.82rem}
+button:hover{background:#076984}button:disabled{opacity:.55;cursor:not-allowed}.chip{border:1px solid #7ba2ba;border-radius:999px;padding:.35rem .7rem;font-size:.82rem}
 main{padding:1.2rem}.notice{background:#e5f2f6;border-left:4px solid #1592ac;padding:.9rem 1.1rem;border-radius:5px}
 .summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.8rem;margin:1rem 0}.card,.panel{background:white;border:1px solid #d9e3ec;border-radius:12px;box-shadow:0 2px 6px #12304c0c}
 .card{padding:1rem}.card span{display:block;color:#5c7385;font-size:.87rem}.card strong{font-size:1.8rem;font-variant-numeric:tabular-nums}

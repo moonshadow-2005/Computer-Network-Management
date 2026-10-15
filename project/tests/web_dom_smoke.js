@@ -56,6 +56,7 @@ async function main() {
     {device_id:'r-0-1', address:'192.168.0.1', role:'router-candidate', data_source:'document'},
     {device_id:'host-1', address:'192.168.1.1', role:'test-host', data_source:'document'},
     {device_id:'sample-router', address:'192.0.2.10', role:'sample', data_source:'sample'},
+    {device_id:'sample-host-1', address:'192.0.2.11', role:'sample', data_source:'sample'},
   ];
   const pings = [0, 1, 2, 3].map(index => ({
     sample_id:index+1, device_id:'host-1', target:'192.168.1.1',
@@ -73,6 +74,9 @@ async function main() {
   }));
   const taskId = 'task-live-12345678';
   const state = {failPing:false, failMetrics:false, failConfigDiff:false, failTaskCancel:true, failCollect:false,
+    failHealth:false, failAuth:false,
+    health:{live_enabled:true,service_probe_enabled:true,iperf3_enabled:true},
+    baselineItems:[{device_id:'host-1',port:22,allowed:true,note:'course SSH service',data_source:'configured'}],
     failRoutes:false, deferNextRoutes:false, routeDeferredStarted:false, routeGate:null, trafficRequest:null,
     configDiffRequests:[], faultFilters:[], faultAcks:[], securityRequests:[], performanceRequests:[], taskCancelRequests:[],
     collectRequests:[],
@@ -85,7 +89,13 @@ async function main() {
   const empty = {items:[], total:0};
   const fetch = async (url, options = {}) => {
     const path = new URL(url, 'http://local').pathname;
-    if (path.endsWith('/health')) return reply({live_enabled:false});
+    if (path.endsWith('/health')) {
+      if (state.failHealth) throw new Error('fixture health failure');
+      return reply(state.health);
+    }
+    if (options.method === 'POST' && state.failAuth) {
+      return {ok:false, status:401, json:async () => ({status:'error', error:{message:'invalid admin token'}})};
+    }
     if (path.endsWith('/overview')) return reply({counts:{devices:2, interfaces:1, active_events:0, open_risks:0}});
     if (path.endsWith('/devices')) return reply({items:devices});
     if (path.endsWith('/interfaces')) return reply({items:[{
@@ -138,10 +148,11 @@ async function main() {
       if (options.method === 'POST') {
         const request = {path, method:options.method, token:options.headers?.['X-Admin-Token'], body:JSON.parse(options.body)};
         state.securityRequests.push(request);
+        state.baselineItems = state.baselineItems.filter(item => item.device_id !== request.body.device_id || item.port !== request.body.port);
+        state.baselineItems.push({...request.body,data_source:'configured'});
         return reply({...request.body, data_source:'configured'});
       }
-      return reply({items:[{device_id:'host-1', port:22, allowed:true,
-        note:'course SSH service', data_source:'configured'}], total:1});
+      return reply({items:state.baselineItems,total:state.baselineItems.length});
     }
     if (path.endsWith('/security/probe')) {
       const request = {path, method:options.method, token:options.headers?.['X-Admin-Token'], body:JSON.parse(options.body)};
@@ -227,6 +238,8 @@ async function main() {
   assert.deepEqual(success, {pingLines:2, pingPoints:6, rateLines:2, ratePoints:6});
   assert.match(elements.get('metric-trend-summary').textContent, /无效 1 条/);
   assert.match(elements.get('ping-trend-summary').textContent, /来源 sample/);
+  assert.ok(elements.get('ping-trend-device').children.some(option => option.value === 'sample-host-1'));
+  assert.ok(!elements.get('ping-trend-device').children.some(option => option.value === 'sample-router'));
   assert.match(elements.get('baselines').textContent, /host-1.*22.*是.*course SSH service.*configured/);
   assert.match(elements.get('service-checks').textContent, /开放/);
   assert.match(elements.get('service-checks').textContent, /live/);
@@ -286,9 +299,13 @@ async function main() {
   await new Promise(resolve => setTimeout(resolve, 20));
   assert.ok(state.faultFilters.some(item => item.kind === 'events' && item.device_id === 'host-1'));
   assert.ok(state.faultFilters.some(item => item.kind === 'ping' && item.device_id === 'host-1'));
-  document.getElementById('admin-token').value = 'test-token';
   const initialAckButton = findNodes(elements.get('events'), 'button').find(node => node.textContent === '确认告警');
   assert.ok(initialAckButton);
+  await initialAckButton.handlers.click();
+  assert.equal(state.faultAcks.length, 0);
+  assert.match(elements.get('fault-filter-summary').textContent, /页面底部.*管理令牌/);
+  assert.equal(initialAckButton.disabled, false);
+  document.getElementById('admin-token').value = 'test-token';
   await initialAckButton.handlers.click();
   assert.deepEqual(state.faultAcks, [{path:'/api/v1/events/42/acknowledge',method:'POST',token:'test-token'}]);
   const acknowledgedButton = findNodes(elements.get('events'), 'button').find(node => node.textContent === '已确认');
@@ -319,6 +336,8 @@ async function main() {
   assert.deepEqual(state.securityRequests[0], {path:'/api/v1/service-baselines', method:'POST', token:'test-token',
     body:{device_id:'host-1', port:5201, allowed:false, note:'planned test service'}});
   assert.match(elements.get('security-result').textContent, /基线已保存/);
+  assert.match(elements.get('baseline-current').textContent, /已载入 host-1:5201 的基线/);
+  assert.equal(elements.get('baseline-note').value, 'planned test service');
 
   await elements.get('probe-service').handlers.click();
   assert.deepEqual(state.securityRequests[1], {path:'/api/v1/security/probe', method:'POST', token:'test-token',
@@ -397,6 +416,37 @@ async function main() {
   assert.match(elements.get('routes').textContent, /读取失败：fixture route failure/);
   assert.match(elements.get('notice').textContent, /部分数据读取失败：路由/);
   assert.equal(elements.get('refresh').disabled, false);
+  state.failRoutes = false;
+  state.failAuth = true;
+  await elements.get('baseline-form').handlers.submit({preventDefault() {}});
+  assert.match(elements.get('security-result').textContent, /管理令牌不正确.*NMS_API_TOKEN/);
+  state.failAuth = false;
+
+  // Each feature follows its own server-side switch.
+  state.health = {live_enabled:true,service_probe_enabled:false,iperf3_enabled:false};
+  await elements.get('refresh').handlers.click();
+  assert.equal(elements.get('collect').disabled, false);
+  assert.equal(elements.get('iperf-start').disabled, true);
+  assert.equal(elements.get('probe-service').disabled, true);
+
+  // Local mode must explain and block real network actions, including form submits.
+  state.health = {live_enabled:false,service_probe_enabled:false,iperf3_enabled:false};
+  await elements.get('refresh').handlers.click();
+  assert.equal(elements.get('collect').disabled, true);
+  assert.match(elements.get('iperf-availability').textContent, /未启用.*iperf3.*预置样例/);
+  const beforeBlocked = [state.collectRequests.length, state.performanceRequests.length, state.securityRequests.length];
+  await elements.get('collect').handlers.click();
+  await elements.get('iperf-form').handlers.submit({preventDefault() {}});
+  await elements.get('probe-service').handlers.click();
+  assert.deepEqual([state.collectRequests.length, state.performanceRequests.length, state.securityRequests.length], beforeBlocked);
+  assert.match(elements.get('iperf-result').textContent, /当前未启用/);
+
+  state.failHealth = true;
+  await elements.get('refresh').handlers.click();
+  assert.equal(elements.get('iperf-start').disabled, true);
+  assert.equal(elements.get('collect').disabled, true);
+  assert.equal(elements.get('probe-service').disabled, true);
+  assert.match(elements.get('iperf-availability').textContent, /无法确认.*刷新数据/);
   console.log('前端 DOM 冒烟通过：管理交互、功能表单、分区错误处理与并发刷新保护均正确。');
 }
 

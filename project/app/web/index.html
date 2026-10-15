@@ -73,10 +73,11 @@
       <section class="chart-card"><h4>入方向与出方向（bit/s）</h4><div id="metric-rate-chart"></div></section>
       <h3>接口速率样本明细</h3><div id="metrics" class="table-wrap"></div>
       <h3>受控 iperf3 测试</h3>
+      <p id="iperf-availability" class="footer-note" role="status">正在检查真实吞吐量测试是否已启用…</p>
       <form id="iperf-form" class="form-row">
         <label>客户端 <select id="iperf-client"><option value="host-1">子网 1 主机</option><option value="host-2">子网 2 主机</option><option value="host-3">子网 3 主机</option></select></label>
         <label>服务端 <select id="iperf-server"><option value="host-2">子网 2 主机</option><option value="host-1">子网 1 主机</option><option value="host-3">子网 3 主机</option></select></label>
-        <button type="submit">开始 2 秒 / 10 Mbit/s 测试</button>
+        <button id="iperf-start" type="submit" disabled>开始 2 秒 / 10 Mbit/s 测试</button>
       </form>
       <p id="iperf-result" role="status"></p><div id="tasks" class="table-wrap"></div>
     </section>
@@ -99,8 +100,9 @@
         <label>TCP 端口 <input id="baseline-port" type="number" min="1" max="65535" value="5201" required></label>
         <label>预期开放 <select id="baseline-allowed"><option value="false">否</option><option value="true">是</option></select></label>
         <label>说明 <input id="baseline-note" type="text" maxlength="200" placeholder="此基线的依据"></label>
-        <button type="submit">保存基线</button><button id="probe-service" type="button">检查此端口</button>
+        <button type="submit">保存基线</button><button id="probe-service" type="button" disabled>检查此端口</button>
       </form>
+      <p id="probe-availability" class="footer-note" role="status">正在检查真实端口探测是否已启用…</p>
       <p id="baseline-current" class="footer-note" role="status">正在读取所选端口的已保存基线…</p>
       <p id="security-result" role="status"></p>
       <h3>服务基线</h3><div id="baselines" class="table-wrap"></div>
@@ -113,8 +115,9 @@
       <div class="section-head"><h2>运行与采集</h2><p>采集只在显式启用的实验环境运行。管理令牌仅用于本次浏览器会话，不保存。</p></div>
       <div class="form-row">
         <label>管理令牌 <input id="admin-token" type="password" autocomplete="off" placeholder="NMS_API_TOKEN"></label>
-        <button id="collect" type="button">执行一轮只读采集</button>
+        <button id="collect" type="button" disabled>执行一轮只读采集</button>
       </div>
+      <p id="collect-availability" class="footer-note" role="status">正在检查真实采集是否已启用…</p>
       <p id="operation-result" role="status"></p>
       <h3>最近采集</h3><div id="runs" class="table-wrap"></div>
       <p class="footer-note">API 结构见 <a href="/openapi.json">/openapi.json</a>。时间统一以 UTC 保存，页面按本地时区显示。</p>

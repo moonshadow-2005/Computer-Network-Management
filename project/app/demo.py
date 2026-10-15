@@ -8,10 +8,15 @@ from __future__ import annotations
 from pathlib import Path
 
 from app.core.config import ROOT
-from app.core.db import Database, encode
+from app.core.db import CURRENT_SCHEMA_VERSION, Database, encode
 
 
-DEMO_DB = ROOT / "data" / "demo.sqlite3"
+# Samples are reproducible and read-only through the demo launcher. Keep one
+# file per schema version instead of migrating old samples on filesystems that
+# cannot enforce the permissions required for migration backups (e.g. DrvFS).
+# Previous sample databases are left intact.
+DEMO_DB = ROOT / "data" / f"demo-v{CURRENT_SCHEMA_VERSION}.sqlite3"
+LOCAL_TEST_DB = ROOT / "data" / f"local-test-v{CURRENT_SCHEMA_VERSION}.sqlite3"
 
 
 def load_demo(db_path: Path | None = None) -> bool:
