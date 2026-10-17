@@ -5,6 +5,43 @@ import socket
 from app.core.db import Database, encode, utc_now
 
 
+def _policy_risk(db, device_id: str, rule: str, observed_at: str, present: bool,
+                 evidence: dict, data_source: str) -> int | None:
+    previous = db.execute("SELECT risk_id FROM risks WHERE device_id=? AND rule_id=? AND state IN ('open','acknowledged')",
+                          (device_id, rule)).fetchone()
+    if present:
+        if previous:
+            db.execute("UPDATE risks SET last_seen=?,evidence=? WHERE risk_id=?",
+                       (observed_at, encode(evidence), previous["risk_id"]))
+            return previous["risk_id"]
+        return db.execute("""INSERT INTO risks(device_id,rule_id,level,state,first_seen,last_seen,evidence,data_source)
+                            VALUES (?,?,'warning','open',?,?,?,?)""",
+                          (device_id, rule, observed_at, observed_at, encode(evidence), data_source)).lastrowid
+    if previous:
+        db.execute("UPDATE risks SET state='resolved',last_seen=?,resolved_at=?,evidence=? WHERE risk_id=?",
+                   (observed_at, observed_at, encode(evidence), previous["risk_id"]))
+        return previous["risk_id"]
+    return None
+
+
+def record_snmp_access_risk(database: Database, device_id: str, sampled_at: str,
+                            common_default: bool) -> int | None:
+    """A different working credential does not prove the old default was revoked."""
+    evidence = {"basis":"已成功执行 SNMPv2c 只读查询", "common_default_credential":common_default,
+                "observed_from":"DEV 管理端", "other_network_exposure_tested":False,
+                "summary":"常见默认 SNMP 团体字可读取管理信息" if common_default else "本次成功查询未命中默认凭据规则",
+                "recommendation":"核实管理访问 ACL 与凭据策略；课程环境内的正式配置由维护方确认",
+                "vulnerability_confirmed":False, "attack_source_identified":False}
+    with database.connect() as db:
+        if not common_default:
+            previous = db.execute("""SELECT risk_id FROM risks WHERE device_id=? AND
+                rule_id='snmp_common_default_read_access' AND state IN ('open','acknowledged')""",
+                (device_id,)).fetchone()
+            return previous["risk_id"] if previous else None
+        return _policy_risk(db, device_id, "snmp_common_default_read_access", sampled_at,
+                            True, evidence, "live")
+
+
 def check_tcp(address: str, port: int, timeout_s: float = 1.0) -> tuple[str, str | None]:
     try:
         with socket.create_connection((address, port), timeout=timeout_s):
@@ -54,6 +91,11 @@ def record_service_check(database: Database, device_id: str, port: int,
         elif open_risk and (state == "closed" or baseline["allowed"]):
             db.execute("UPDATE risks SET state='resolved',last_seen=?,resolved_at=?,evidence=? WHERE risk_id=?",
                        (observed_at, observed_at, encode(evidence), risk_id))
+        if port == 23 and state in {"open", "closed"}:
+            _policy_risk(db, device_id, "possible_telnet_service_tcp_23", observed_at, state == "open",
+                         {**evidence, "summary":"TCP/23 开放，需核实是否提供明文 Telnet 管理服务",
+                          "basis":"端口号和连接结果的启发式线索，未识别实际协议或验证漏洞",
+                          "vulnerability_confirmed":False}, data_source)
         return {"check_id": check_id, "state": state, "risk_id": risk_id}
 
 

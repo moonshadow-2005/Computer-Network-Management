@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 from pathlib import Path
 
 
@@ -46,9 +47,10 @@ def main(argv: list[str] | None = None) -> int:
     if not db_path.is_absolute():
         db_path = ROOT / db_path
     db_path = db_path.resolve()
-    if args.mode == "live" and db_path in {
-        DEMO_DB.resolve(), LOCAL_TEST_DB.resolve(), (ROOT / "data/demo.sqlite3").resolve(),
-    }:
+    sample_path = db_path in {DEMO_DB.resolve(), LOCAL_TEST_DB.resolve(), (ROOT / "data/demo.sqlite3").resolve()}
+    sample_path = sample_path or (db_path.parent == (ROOT / "data").resolve()
+                                 and bool(re.fullmatch(r"(?:demo|local-test)-v\d+\.sqlite3", db_path.name)))
+    if args.mode == "live" and sample_path:
         parser.error("live 模式请使用独立实验数据库，不能使用默认样例库")
     os.environ["NMS_DB"] = str(db_path)
 

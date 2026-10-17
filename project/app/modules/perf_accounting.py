@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from app.core.db import Database, decode, encode
+from app.modules.discovery import traffic_attribution
 
 
 UINT64_MAX = 2**64 - 1
@@ -137,4 +138,38 @@ def traffic_report(database: Database, interface_id: str, start: str, end: str) 
         "source_sample_ids": source_sample_ids,
         "metric_sample_ids": [x["metric_id"] for x in included],
         "note": "仅合计完全位于窗口内的有效采样区间；缺口和边界不外推。",
+        "attribution": traffic_attribution(database, interface_id, start, end),
     }
+
+
+def pair_traffic_report(database: Database, start: str, end: str) -> dict:
+    """Count known endpoint transfers; never relabel interface counters as flows."""
+    if _seconds(start, end) <= 0:
+        raise ValueError("from must precede to")
+    tasks = database.rows("""SELECT * FROM tasks WHERE type='iperf3' AND task_state='succeeded'
+        AND started_at<? AND finished_at>? ORDER BY started_at,task_id""", (end, start))
+    groups, excluded = {}, []
+    for task in tasks:
+        if task["started_at"] < start or task["finished_at"] > end:
+            excluded.append({"task_id": task["task_id"], "reason": "crosses_window_boundary"})
+            continue
+        result = decode(task["result"], {})
+        value = result.get("received_bytes") if isinstance(result, dict) else None
+        if isinstance(value, bool) or not isinstance(value, (int, str)) or not str(value).isdigit():
+            excluded.append({"task_id": task["task_id"], "reason": "received_bytes_unavailable"})
+            continue
+        key = (task["client_device_id"], task["server_device_id"], task["data_source"])
+        if not all(key):
+            excluded.append({"task_id": task["task_id"], "reason": "endpoints_unavailable"})
+            continue
+        item = groups.setdefault(key, {"client_device_id": key[0], "server_device_id": key[1],
+            "data_source": key[2], "received_bytes": 0, "task_ids": [], "task_count": 0})
+        item["received_bytes"] += int(value)
+        item["task_ids"].append(task["task_id"])
+        item["task_count"] += 1
+    items = [{**item, "received_bytes": str(item["received_bytes"])} for item in groups.values()]
+    return {"from": start, "to": end, "items": items, "total": len(items),
+            "excluded_tasks": excluded, "scope": "successful_iperf3_tasks_only",
+            "network_total_available": False,
+            "note": "仅统计完整落在窗口内的成功 iperf3 任务接收字节；sample 与 live 分列。"
+                    "不含其他业务、协议开销或窗口外传输，不代表全部网元间流量。"}

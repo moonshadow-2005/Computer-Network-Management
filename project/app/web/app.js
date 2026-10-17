@@ -31,6 +31,15 @@ function networkActionReason(name) {
 
 function updateNetworkControls(health) {
   currentHealth = health;
+  if (health?.iperf3_allowed_devices) {
+    for (const id of ['iperf-client','iperf-server']) {
+      const select = $(id);
+      for (const option of select.children) option.disabled = !health.iperf3_allowed_devices.includes(option.value);
+      if (!health.iperf3_allowed_devices.includes(select.value)) {
+        select.value = health.iperf3_allowed_devices[id === 'iperf-client' ? 0 : 1] || '';
+      }
+    }
+  }
   for (const [name, action] of Object.entries(networkActions)) {
     const reason = networkActionReason(name);
     $(action.button).disabled = Boolean(reason);
@@ -102,6 +111,47 @@ function svgNode(name, attributes = {}, text = '') {
   for (const [key, value] of Object.entries(attributes)) node.setAttribute(key, String(value));
   if (text) node.textContent = text;
   return node;
+}
+function renderTopology(topology) {
+  const observed = topology.edges.filter(edge => edge.kind === 'ip_subnet');
+  const documents = topology.edges.filter(edge => edge.data_source === 'document');
+  $('topology-summary').textContent = `${topology.nodes.length} 个节点；${observed.length} 条采样子网关系，${documents.length} 条文档关系。${topology.note}`;
+  table('topology-edges', ['对象', '子网', '接口/IP', '依据', '采样时间', '来源'], topology.edges.map(edge => [
+    edge.source, topology.nodes.find(node => node.node_id === edge.target)?.label || edge.target,
+    edge.interface_id ? `${edge.interface_id} · ${edge.address} / ${edge.mask}` : '未实测',
+    edge.basis, localTime(edge.sampled_at), badge(edge.data_source)
+  ]));
+  $('identity-candidates').textContent = topology.identity_candidates?.length
+    ? '可能指向同一 SNMP 代理的候选地址：' + topology.identity_candidates.map(group => group.device_ids.join('、')).join('；') + '。尚未归并物理设备。'
+    : '设备身份按候选地址保留；当前没有充分依据归并物理设备。';
+  const root = $('topology-diagram'); root.replaceChildren();
+  if (!topology.nodes.length) return;
+  const devices = topology.nodes.filter(node => node.role !== 'subnet');
+  const subnets = topology.nodes.filter(node => node.role === 'subnet');
+  const height = Math.max(220, Math.max(devices.length, subnets.length) * 54 + 55);
+  const svg = svgNode('svg', {viewBox:`0 0 960 ${height}`, role:'img', 'aria-label':'设备与子网关系图'});
+  svg.append(svgNode('title', {}, '实线为采样得到的子网归属，虚线为课程文档关系；不表示物理直连'));
+  const positions = new Map();
+  devices.forEach((node, index) => positions.set(node.node_id, {x:20, y:35 + index*54, width:250}));
+  subnets.forEach((node, index) => positions.set(node.node_id, {x:650, y:35 + index*54, width:280}));
+  for (const edge of topology.edges) {
+    const source = positions.get(edge.source), target = positions.get(edge.target);
+    if (!source || !target) continue;
+    const line = svgNode('line', {x1:source.x+source.width, y1:source.y+16, x2:target.x, y2:target.y+16,
+      stroke:edge.data_source === 'live' ? '#087c78' : edge.data_source === 'sample' ? '#7950b8' : '#8797a5',
+      'stroke-width':edge.kind === 'ip_subnet' ? 2.5 : 1.5,
+      'stroke-dasharray':edge.kind === 'ip_subnet' ? 'none' : '6 5'});
+    line.append(svgNode('title', {}, `${edge.source} → ${edge.target} · ${edge.basis} · ${edge.data_source} · ${localTime(edge.sampled_at)}`));
+    svg.append(line);
+  }
+  for (const node of topology.nodes) {
+    const p = positions.get(node.node_id);
+    if (!p) continue;
+    svg.append(svgNode('rect', {x:p.x, y:p.y, width:p.width, height:34, rx:6, fill:'#edf5f8', stroke:'#b2cbd5'}));
+    svg.append(svgNode('text', {x:p.x+10, y:p.y+22, fill:'#173b50', 'font-size':14},
+      node.role === 'subnet' ? node.label : `${node.node_id} · ${node.address || ''}`));
+  }
+  root.append(svg);
 }
 function formatAxisValue(value, unit) {
   if (unit === 'bit/s') {
@@ -291,8 +341,9 @@ async function loadFaultHistory(deviceId) {
   summary.textContent = '正在读取所选设备最近 30 条故障与连通性历史…';
   const params = new URLSearchParams({limit:'30'});
   if (deviceId) params.set('device_id', deviceId);
-  const [eventResult, pingResult] = await Promise.allSettled([
-    api('/events?' + params), api('/ping-samples?' + params)
+  const [eventResult, pingResult, diagnosticResult] = await Promise.allSettled([
+    api('/events?' + params), api('/ping-samples?' + params),
+    api('/diagnostics?' + (deviceId ? new URLSearchParams({device_id:deviceId}) : ''))
   ]);
   if (requestId !== faultHistoryRequestId || $('fault-device').value !== deviceId) return;
 
@@ -331,6 +382,15 @@ async function loadFaultHistory(deviceId) {
       item.loss_pct === null ? '未知' : `${item.loss_pct}%`, badge(item.query_status), badge(item.data_source)
     ]));
   } else failed('ping', pingResult.reason);
+
+  if (diagnosticResult.status === 'fulfilled') {
+    table('diagnostics', ['对象', '观测时效', '诊断', '依据', '建议', '来源'],
+      diagnosticResult.value.items.flatMap(device => device.findings?.length ? device.findings.map(item => [
+        device.device_id, device.stale ? '历史样本（超过 5 分钟）' : localTime(device.sampled_at),
+        item.summary, JSON.stringify({ping_sample_id:item.ping_sample_id, interface_id:item.interface_id,
+          related_down_interfaces:item.related_down_interfaces}), item.next_steps.join('；'), badge(item.data_source)
+      ]) : [[device.device_id, '未取得诊断样本', '未知', '—', '执行一轮采集后查看', badge(device.data_source)]]));
+  } else failed('diagnostics', diagnosticResult.reason);
 
   const label = deviceId || '所有设备';
   const eventCount = eventResult.status === 'fulfilled' ? `${eventResult.value.total} 条告警` : '告警读取失败';
@@ -412,10 +472,12 @@ async function refresh() {
   $('refresh').disabled = true;
   try {
     const [healthResult, overviewResult, devicesResult, interfacesResult, routesResult, baselinesResult,
-      checksResult, risksResult, runsResult, snapshotsResult, topologyResult, tasksResult] = await Promise.allSettled([
+      checksResult, risksResult, runsResult, snapshotsResult, topologyResult, tasksResult,
+      addressesResult, discoveriesResult] = await Promise.allSettled([
       api('/health'), api('/overview'), api('/devices'), api('/interfaces'), api('/routes'),
       api('/service-baselines'), api('/service-checks?limit=30'), api('/risks'),
-      api('/collector-runs?limit=10'), api('/config-snapshots?limit=10'), api('/topology'), api('/tasks?limit=10')
+      api('/collector-runs?limit=10'), api('/config-snapshots?limit=10'), api('/topology'), api('/tasks?limit=10'),
+      api('/interface-addresses?limit=100'), api('/network-discoveries?limit=12')
     ]);
     if (!isCurrent()) return;
     const failures = [];
@@ -451,6 +513,11 @@ async function refresh() {
     renderResource(routesResult, '路由', 'routes', ['对象', '目的/掩码', '下一跳', '接口', '采样时间', '来源'],
       items => items.map(x => [x.device_id, `${x.destination} / ${show(x.mask)}`, x.next_hop, x.interface_id,
         localTime(x.sampled_at), badge(x.data_source)]), failures);
+    renderResource(addressesResult, '接口 IP', 'interface-addresses', ['接口', 'IP', '掩码', '子网', '采样时间', '来源'],
+      items => items.map(x => [x.interface_id, x.address, x.mask, x.network, localTime(x.sampled_at), badge(x.data_source)]), failures);
+    renderResource(discoveriesResult, '地址发现', 'network-discoveries', ['对象', 'sysName', '地址表状态', '采样时间', '说明', '来源'],
+      items => items.map(x => [x.device_id, x.sys_name, badge(x.query_status), localTime(x.sampled_at),
+        x.issues.join('；') || '地址表完整读取', badge(x.data_source)]), failures);
     renderResource(tasksResult, '任务', 'tasks', ['任务', '端点', '状态', '接收速率', '完成时间', '错误', '来源', '操作'], items => items.map(x => {
       let action = '—';
       const canCancel = x.type === 'iperf3' && ['pending', 'running'].includes(x.task_state);
@@ -535,11 +602,12 @@ async function refresh() {
     await Promise.all([loadPingTrend(pingSelect.value), loadMetricTrend(metricSelect.value)]);
     if (!isCurrent()) return;
     if (topologyResult.status === 'fulfilled') {
-      const topology = topologyResult.value;
-      $('topology-summary').textContent = `${topology.nodes.length} 个节点、${topology.edges.length} 条文档逻辑关系。${topology.note}`;
+      renderTopology(topologyResult.value);
     } else {
       failures.push('逻辑拓扑');
       failed('topology-summary', topologyResult.reason);
+      $('topology-diagram').replaceChildren();
+      $('topology-edges').replaceChildren();
     }
     const select = $('traffic-interface'), current = select.value; select.replaceChildren();
     if (!interfaces.items.length) {
@@ -582,8 +650,9 @@ $('config-diff-form').addEventListener('submit', async event => {
     $('config-diff-summary').textContent = result.changes.length
       ? `${result.device_id}：快照 #${result.before_id} → #${result.after_id}，${result.changes.length} 处变化；来源 ${result.data_source}。`
       : `${result.device_id}：快照 #${result.before_id} → #${result.after_id}，没有配置变化；来源 ${result.data_source}。`;
+    if (result.incomplete_sections?.length) $('config-diff-summary').textContent += ` 未完整采样的部分（${result.incomplete_sections.join('、')}）未比较。`;
     table('config-diff-changes', ['类别', '标识', '变化', '变更前', '变更后'], result.changes.map(item => [
-      item.kind === 'interfaces' ? '接口' : '路由', item.id,
+      {interfaces:'接口',routes:'路由',addresses:'IP/掩码'}[item.kind] || item.kind, item.id,
       {added: '新增', removed: '删除', changed: '变化'}[item.change] || item.change,
       item.before === null ? '—' : JSON.stringify(item.before),
       item.after === null ? '—' : JSON.stringify(item.after)
@@ -607,9 +676,22 @@ $('traffic-form').addEventListener('submit', async event => {
     const totals = direction === 'in' ? `入方向：${show(x.in_bytes)} byte`
       : direction === 'out' ? `出方向：${show(x.out_bytes)} byte`
         : `入方向：${show(x.in_bytes)} byte\n出方向：${show(x.out_bytes)} byte`;
-    $('traffic-result').textContent = `观测接口：${x.observation_point || x.interface_id}\n时间窗：${localTime(x.from)} 至 ${localTime(x.to)}\n方向：${directionLabel}\n${totals}\n覆盖率：${x.coverage_pct}%\n完整窗口：${x.complete ? '是' : '否'}\n无效区间：${x.invalid_intervals.length}\n来源：${x.data_source}\n${x.note}`;
+    const a = x.attribution;
+    const mapping = a ? `\n观测设备：${show(a.device_id)}\n子网：${a.networks.join('、') || '未确认'}（${a.mapping_status}）\n入方向：${a.in_direction}；出方向：${a.out_direction}\n${a.note}` : '';
+    $('traffic-result').textContent = `观测接口：${x.observation_point || x.interface_id}\n时间窗：${localTime(x.from)} 至 ${localTime(x.to)}\n方向：${directionLabel}\n${totals}\n覆盖率：${x.coverage_pct}%\n完整窗口：${x.complete ? '是' : '否'}\n无效区间：${x.invalid_intervals.length}\n来源：${x.data_source}\n${x.note}${mapping}`;
     $('traffic-csv').href = base + '/traffic/export.csv?' + params; $('traffic-csv').hidden = false;
   } catch (error) { $('traffic-result').textContent = `统计失败：${error.message}`; }
+  $('pair-traffic-csv').hidden = true;
+  const pairParams = new URLSearchParams({from:params.get('from'), to:params.get('to')});
+  try {
+    const pairs = await api('/traffic/pairs?' + pairParams);
+    table('pair-traffic', ['客户端 → 服务端', '接收字节', '成功任务数', '任务依据', '来源'],
+      pairs.items.map(item => [`${item.client_device_id} → ${item.server_device_id}`, item.received_bytes,
+        item.task_count, item.task_ids.join('、'), badge(item.data_source)]));
+    $('pair-traffic-note').textContent = pairs.note || '仅统计成功 iperf3 测试传输量。';
+    $('pair-traffic-csv').href = base + '/traffic/pairs/export.csv?' + pairParams;
+    $('pair-traffic-csv').hidden = false;
+  } catch (error) { failed('pair-traffic-note', error); $('pair-traffic').replaceChildren(); }
 });
 $('collect').addEventListener('click', async () => {
   const reason = networkActionReason('collect');

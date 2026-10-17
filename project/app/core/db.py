@@ -129,7 +129,28 @@ CREATE INDEX IF NOT EXISTS idx_risk_device_time ON risks(device_id,last_seen);
 """
 
 
-CURRENT_SCHEMA_VERSION = 2
+NETWORK_TABLES = (
+    """CREATE TABLE IF NOT EXISTS network_discoveries (
+      discovery_id INTEGER PRIMARY KEY AUTOINCREMENT,
+      device_id TEXT NOT NULL REFERENCES devices(device_id), sampled_at TEXT NOT NULL,
+      query_status TEXT NOT NULL, sys_name TEXT, sys_object_id TEXT,
+      issues TEXT NOT NULL, data_source TEXT NOT NULL
+    )""",
+    """CREATE TABLE IF NOT EXISTS interface_addresses (
+      address_id INTEGER PRIMARY KEY AUTOINCREMENT,
+      discovery_id INTEGER NOT NULL REFERENCES network_discoveries(discovery_id),
+      device_id TEXT NOT NULL REFERENCES devices(device_id),
+      interface_id TEXT NOT NULL REFERENCES interfaces(interface_id), if_index INTEGER NOT NULL,
+      address TEXT NOT NULL, mask TEXT NOT NULL, network TEXT NOT NULL,
+      sampled_at TEXT NOT NULL, data_source TEXT NOT NULL,
+      UNIQUE(discovery_id,address)
+    )""",
+    "CREATE INDEX IF NOT EXISTS idx_discovery_device_time ON network_discoveries(device_id,sampled_at)",
+    "CREATE INDEX IF NOT EXISTS idx_address_discovery ON interface_addresses(discovery_id)",
+)
+SCHEMA += "\n" + ";\n".join(NETWORK_TABLES) + ";\n"
+
+CURRENT_SCHEMA_VERSION = 3
 
 
 DOCUMENT_DEVICES = (
@@ -183,6 +204,9 @@ class Database:
             db.execute("BEGIN IMMEDIATE")
             self._migrate(db, version)
             db.execute(f"PRAGMA user_version={CURRENT_SCHEMA_VERSION}")
+            db.execute("""UPDATE collector_runs SET state='failed',finished_at=?,details=?
+                       WHERE state='running'""",
+                       (utc_now(), encode([{"status":"error", "reason":"采集被服务重启中断，未自动重放"}])))
             db.execute("""UPDATE tasks SET task_state='failed',finished_at=?,
                        error=? WHERE task_state IN ('pending','running')""",
                        (utc_now(), encode({"code": "INTERRUPTED", "message": "服务重启，任务未自动重放"})))
@@ -243,6 +267,10 @@ class Database:
                 if "acknowledged_at" not in columns:
                     db.execute("ALTER TABLE events ADD COLUMN acknowledged_at TEXT")
             version = 2
+        if version < 3:
+            for statement in NETWORK_TABLES:
+                db.execute(statement)
+            version = 3
         if version != CURRENT_SCHEMA_VERSION:
             raise RuntimeError(f"no migration path from database schema {version}")
 

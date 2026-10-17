@@ -53,6 +53,20 @@ def load_demo(db_path: Path | None = None) -> bool:
                      "admin_status": "up", "oper_status": "up", "reference_speed_bps": 100000000}},
                    "routes": {"sample-route-1": {"destination": "192.0.2.0", "mask": "255.255.255.0",
                                                 "next_hop": "0.0.0.0", "interface_id": "sample-router:1"}}}
+        sample_address = {"interface_id": "sample-router:1", "address": "192.0.2.10",
+                          "mask": "255.255.255.0", "network": "192.0.2.0/24"}
+        for snapshot in (initial, changed):
+            snapshot["addresses"] = {"sample-router:1@192.0.2.10": sample_address}
+        discovery_id = db.execute(
+            """INSERT INTO network_discoveries
+               (device_id,sampled_at,query_status,sys_name,sys_object_id,issues,data_source)
+               VALUES ('sample-router','2026-10-13T09:00:00Z','ok','sample-router',NULL,'[]','sample')"""
+        ).lastrowid
+        db.execute(
+            """INSERT INTO interface_addresses
+               (discovery_id,device_id,interface_id,if_index,address,mask,network,sampled_at,data_source)
+               VALUES (?,'sample-router','sample-router:1',1,'192.0.2.10','255.255.255.0',
+                       '192.0.2.0/24','2026-10-13T09:00:00Z','sample')""", (discovery_id,))
         for sampled_at, content in (("2026-10-13T08:59:00Z", initial),
                                     ("2026-10-13T09:00:10Z", changed)):
             db.execute("INSERT INTO config_snapshots(device_id,sampled_at,content,data_source) VALUES (?,?,?,'sample')",

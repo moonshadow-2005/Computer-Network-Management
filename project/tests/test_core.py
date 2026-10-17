@@ -31,7 +31,11 @@ from app.service import (CollectorService, IF_ADMIN, IF_DESCR, IF_DISCONTINUITY,
 
 
 @pytest.fixture
-def database(tmp_path):
+def database(tmp_path, monkeypatch):
+    # Legacy SNMP fixtures model interface/route tables only. The address-table
+    # integration and its failure modes are exercised in test_discovery.py.
+    monkeypatch.setattr("app.service.read_inventory", lambda *_args: {
+        "query_status": "unavailable", "addresses": [], "issues": ["legacy fixture has no IP table"]})
     db = Database(tmp_path / "nms.sqlite3")
     db.initialize()
     with db.connect() as conn:
@@ -1422,7 +1426,7 @@ def test_database_migrates_legacy_baseline_with_backup_and_is_idempotent(tmp_pat
     assert database.row(
         "SELECT allowed,note,data_source FROM service_baselines WHERE device_id='host-1' AND port=22"
     ) == {"allowed": 1, "note": "legacy", "data_source": "configured"}
-    backups = list((tmp_path / "backups").glob("legacy.pre-v0-to-v2-*.sqlite3"))
+    backups = list((tmp_path / "backups").glob(f"legacy.pre-v0-to-v{CURRENT_SCHEMA_VERSION}-*.sqlite3"))
     assert len(backups) == 1
     assert backups[0].stat().st_mode & 0o777 == 0o600
     preserved = sqlite3.connect(backups[0])
@@ -1440,7 +1444,7 @@ def test_database_migrates_legacy_baseline_with_backup_and_is_idempotent(tmp_pat
     }
 
     database.initialize()
-    assert len(list((tmp_path / "backups").glob("legacy.pre-v0-to-v2-*.sqlite3"))) == 1
+    assert len(list((tmp_path / "backups").glob(f"legacy.pre-v0-to-v{CURRENT_SCHEMA_VERSION}-*.sqlite3"))) == 1
     assert database.row("PRAGMA user_version")["user_version"] == CURRENT_SCHEMA_VERSION
 
 
@@ -1469,7 +1473,7 @@ def test_database_migrates_v1_events_without_losing_rows(tmp_path):
     assert database.row("SELECT state,recovered_at,acknowledged_at FROM events WHERE event_id=1") == {
         "state":"recovered", "recovered_at":"2026-10-13T10:00:10Z", "acknowledged_at":None,
     }
-    backups = list((tmp_path / "backups").glob("v1.pre-v1-to-v2-*.sqlite3"))
+    backups = list((tmp_path / "backups").glob(f"v1.pre-v1-to-v{CURRENT_SCHEMA_VERSION}-*.sqlite3"))
     assert len(backups) == 1
     assert backups[0].stat().st_mode & 0o777 == 0o600
     old_columns = {row[1] for row in sqlite3.connect(backups[0]).execute("PRAGMA table_info(events)")}

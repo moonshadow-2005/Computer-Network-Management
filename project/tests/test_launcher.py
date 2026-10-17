@@ -80,7 +80,7 @@ def test_default_demo_leaves_legacy_database_intact_when_chmod_is_ineffective(tm
         assert db.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
 
 
-@pytest.mark.parametrize("name", ["demo.sqlite3", f"demo-v{CURRENT_SCHEMA_VERSION}.sqlite3",
+@pytest.mark.parametrize("name", ["demo.sqlite3", "demo-v2.sqlite3", "local-test-v2.sqlite3", f"demo-v{CURRENT_SCHEMA_VERSION}.sqlite3",
                                  f"local-test-v{CURRENT_SCHEMA_VERSION}.sqlite3"])
 def test_live_rejects_default_sample_database_paths(tmp_path, monkeypatch, name):
     monkeypatch.setattr(run, "ROOT", tmp_path)

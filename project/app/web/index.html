@@ -35,11 +35,18 @@
       <p class="footer-note">告警确认需先在“运行与采集”区域填写管理令牌；确认记录与 active/recovered 恢复状态分别保存。</p>
       <div id="events" class="table-wrap"></div>
       <h3>最近的连通性样本</h3><div id="ping" class="table-wrap"></div>
+      <h3>诊断依据与排查建议</h3>
+      <p class="footer-note">结合最近样本解释可能原因；历史数据与未确认根因会单独说明。</p>
+      <div id="diagnostics" class="table-wrap"></div>
     </section>
     <section id="config" class="panel">
       <div class="section-head"><h2>配置管理</h2><p>地址先按候选对象保存，不能从地址数量推断物理设备数量。</p></div>
       <h3>设备</h3><div id="devices" class="table-wrap"></div>
       <h3>接口</h3><div id="interfaces" class="table-wrap"></div>
+      <h3>接口 IP 与掩码</h3>
+      <p class="footer-note">记录来自地址表实际采样；历史记录保留时间和来源。读取失败不会解释为设备没有 IP。</p>
+      <div id="interface-addresses" class="table-wrap"></div>
+      <h3>地址发现结果</h3><div id="network-discoveries" class="table-wrap"></div>
       <h3>路由</h3><div id="routes" class="table-wrap"></div>
       <h3>配置快照比较</h3>
       <form id="config-diff-form" class="form-row">
@@ -51,7 +58,11 @@
       <p id="config-diff-note" class="footer-note" role="status">正在读取配置快照…</p>
       <div id="config-diff-summary" class="result" aria-live="polite"></div>
       <div id="config-diff-changes" class="table-wrap"></div>
-      <details><summary>逻辑拓扑与快照</summary><p id="topology-summary"></p><div id="snapshots" class="table-wrap"></div></details>
+      <details open><summary>逻辑拓扑与快照</summary><p id="topology-summary"></p>
+        <div id="topology-diagram" class="topology-diagram"></div>
+        <div id="topology-edges" class="table-wrap"></div>
+        <p id="identity-candidates" class="footer-note"></p>
+        <h3>快照记录</h3><div id="snapshots" class="table-wrap"></div></details>
     </section>
     <section id="performance" class="panel">
       <div class="section-head"><h2>性能管理</h2><p>展示端到端 RTT、丢包和接口方向速率历史；无效采样保留在表格中但不连入趋势线。接口方向速率使用有效的相邻 64 位字节计数样本计算，参考速率未知时利用率留空。</p></div>
@@ -92,9 +103,13 @@
       </form>
       <div id="traffic-result" class="result">请选择接口和时间范围。</div>
       <a id="traffic-csv" hidden>下载相同窗口的 CSV</a>
+      <h3>受控测试的网元对传输量</h3>
+      <p id="pair-traffic-note" class="footer-note">点击“统计流量”后，按同一时间窗统计成功 iperf3 任务；只包含测试传输量。</p>
+      <div id="pair-traffic" class="table-wrap"></div>
+      <a id="pair-traffic-csv" hidden>下载网元对测试传输 CSV</a>
     </section>
     <section id="security" class="panel">
-      <div class="section-head"><h2>安全管理</h2><p>服务变化或连续 3 次有效采样超过 80% 接口利用率会形成风险线索；端口不可达表示状态未知，不等于关闭；不据此判断攻击来源。</p></div>
+      <div class="section-head"><h2>安全管理</h2><p>检测默认 SNMP 访问、服务基线偏差、TCP/23 潜在明文管理入口及连续高利用率。每条记录保留依据；端口与配置风险线索不代表已验证漏洞或攻击来源。</p></div>
       <form id="baseline-form" class="form-row">
         <label>对象 <select id="baseline-device"><option value="host-1">子网 1 主机</option><option value="host-2">子网 2 主机</option><option value="host-3">子网 3 主机</option></select></label>
         <label>TCP 端口 <input id="baseline-port" type="number" min="1" max="65535" value="5201" required></label>

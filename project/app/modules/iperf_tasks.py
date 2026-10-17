@@ -50,6 +50,8 @@ class IperfTaskManager:
             raise TaskUnavailable("iperf3 tasks are disabled on this server")
         if client_device_id == server_device_id:
             raise ValueError("client and server must differ")
+        if not {client_device_id, server_device_id}.issubset(self.settings.iperf_allowed_devices):
+            raise TaskUnavailable("iperf3 SSH is not configured for the selected endpoint")
         if not 1 <= duration_s <= 3 or not 1 <= target_bps <= 10_000_000:
             raise ValueError("allowed test range: 1–3 seconds, at most 10 Mbit/s")
         if not re.fullmatch(r"[a-z_][a-z0-9_-]*", self.settings.iperf_ssh_user):
@@ -135,9 +137,10 @@ class IperfTaskManager:
 
     def _ssh(self, address: str, remote_command: str) -> list[str]:
         command = ["ssh", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=yes",
-                   "-o", "ConnectTimeout=5", "-o", "ConnectionAttempts=1"]
+                   "-o", "ConnectTimeout=5", "-o", "ConnectionAttempts=1",
+                   "-o", "GSSAPIAuthentication=no"]
         if self.settings.iperf_ssh_key:
-            command += ["-i", str(self.settings.iperf_ssh_key)]
+            command += ["-o", "IdentitiesOnly=yes", "-i", str(self.settings.iperf_ssh_key)]
         return command + [f"{self.settings.iperf_ssh_user}@{address}", remote_command]
 
     @staticmethod

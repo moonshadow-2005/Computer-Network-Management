@@ -30,3 +30,4 @@ label{display:grid;gap:.3rem;color:#52677a;font-size:.85rem}input,select{font:in
 .chart-legend-item::before{content:"";width:1.1rem;height:3px;border-radius:2px;background:var(--series-color)}
 details{margin-top:1.2rem}summary{cursor:pointer;color:#096f92;font-weight:600}a{color:#0b7396}
 @media(max-width:700px){.head-inner{display:block}.header-actions{margin-top:1.3rem}.summary{grid-template-columns:repeat(2,minmax(0,1fr))}.chart-grid{grid-template-columns:1fr}.panel{padding:1rem}}
+.topology-diagram{overflow:auto;margin:1rem 0}.topology-diagram svg{display:block;min-width:650px;width:100%;max-height:850px}

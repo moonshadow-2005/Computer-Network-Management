@@ -19,7 +19,9 @@ from app.core.config import Settings
 from app.core.db import Database, decode, utc_now
 from app.modules.fault_config import acknowledge_event, diff_snapshots
 from app.modules.iperf_tasks import IperfTaskManager, TaskConflict, TaskUnavailable
-from app.modules.perf_accounting import traffic_report
+from app.modules.perf_accounting import pair_traffic_report, traffic_report
+from app.modules.discovery import topology as discovered_topology
+from app.modules.diagnostics import diagnose
 from app.modules.security import check_tcp, record_service_check
 from app.service import CollectorService
 
@@ -116,7 +118,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         yield
         service.stop()
 
-    app = FastAPI(title="第 2 组网络管理系统", version="0.2.0", lifespan=lifespan)
+    app = FastAPI(title="第 2 组网络管理系统", version="0.3.0", lifespan=lifespan)
     app.state.database = database
     app.state.collector = service
     app.state.tasks = tasks
@@ -165,7 +167,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                       "poll_interval_s": settings.poll_interval_s,
                       "snmp_configured": bool(settings.snmp_community),
                       "service_probe_enabled": settings.enable_service_probe,
-                      "iperf3_enabled": settings.enable_iperf3},
+                      "iperf3_enabled": settings.enable_iperf3,
+                      "iperf3_allowed_devices": list(settings.iperf_allowed_devices)},
                      data_source="none")
 
     @app.get("/api/v1/overview")
@@ -199,21 +202,23 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/api/v1/topology")
     async def topology():
-        nodes = database.rows("SELECT device_id AS node_id,device_id,label,role,identity_status,data_source FROM devices ORDER BY device_id")
-        subnet_labels = {1: "192.168.1.0/24", 2: "192.168.2.0/24", 3: "192.168.3.0/24"}
-        nodes += [{"node_id": f"subnet-{n}", "label": label, "role": "subnet",
-                   "data_source": "document"} for n, label in subnet_labels.items()]
-        edges = []
-        for router, subnet in (("r-0-1", 1), ("r-0-2", 1), ("r-0-5", 2), ("r-0-8", 3)):
-            edges.append({"edge_id": f"doc-{router}-subnet-{subnet}", "source": router,
-                          "target": f"subnet-{subnet}", "basis": "课程说明逻辑连接关系",
-                          "confirmed": False, "data_source": "document"})
-        for host, subnet in (("host-1", 1), ("host-2", 2), ("host-3", 3)):
-            edges.append({"edge_id": f"doc-{host}-subnet-{subnet}", "source": host,
-                          "target": f"subnet-{subnet}", "basis": "课程说明地址所属子网",
-                          "confirmed": False, "data_source": "document"})
-        return reply({"nodes": nodes, "edges": edges,
-                      "note": "连接为文档逻辑关系，不能据此归并物理设备。"}, data_source="document")
+        result = discovered_topology(database)
+        sources = {e["data_source"] for e in result["edges"]}
+        return reply(result, data_source=next(iter(sources)) if len(sources) == 1 else "mixed")
+
+    @app.get("/api/v1/network-discoveries")
+    async def network_discoveries(device_id: str | None = None, limit: int = Query(100, ge=1, le=500),
+                                  offset: int = Query(0, ge=0)):
+        data = _list(database, "network_discoveries", {"device_id": device_id}, limit, offset, "discovery_id DESC")
+        for item in data["items"]:
+            item["issues"] = decode(item["issues"], [])
+        return reply(data)
+
+    @app.get("/api/v1/interface-addresses")
+    async def interface_addresses(device_id: str | None = None, discovery_id: int | None = None,
+                                  limit: int = Query(100, ge=1, le=500), offset: int = Query(0, ge=0)):
+        return reply(_list(database, "interface_addresses", {"device_id": device_id, "discovery_id": discovery_id},
+                           limit, offset, "address_id DESC"))
 
     @app.get("/api/v1/config-snapshots")
     async def config_snapshots(device_id: str | None = None,
@@ -250,6 +255,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         for item in data["items"]:
             item["evidence_sample_ids"] = decode(item["evidence_sample_ids"], [])
         return reply(data)
+
+    @app.get("/api/v1/diagnostics")
+    async def diagnostics(device_id: str | None = None):
+        if device_id and not database.row("SELECT device_id FROM devices WHERE device_id=?", (device_id,)):
+            raise HTTPException(404, "device not found")
+        return reply(diagnose(database, device_id))
 
     @app.post("/api/v1/events/{event_id}/acknowledge", dependencies=[Depends(require_write)])
     async def acknowledge_fault_event(event_id: int):
@@ -331,12 +342,35 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         report = traffic_report(database, interface_id, start, end)
         file = io.StringIO()
         writer = csv.writer(file)
-        writer.writerow(["interface_id", "from", "to", "direction", "bytes", "coverage_pct", "complete", "data_source"])
+        attribution = report["attribution"]
+        writer.writerow(["interface_id", "from", "to", "direction", "bytes", "coverage_pct", "complete", "data_source",
+                         "device_id", "networks", "mapping_status", "exact_host_pair"])
         for selected in (("in", "out") if direction == "both" else (direction,)):
             writer.writerow([interface_id, start, end, selected, report[f"{selected}_bytes"],
-                             report["coverage_pct"], report["complete"], report["data_source"]])
+                             report["coverage_pct"], report["complete"], report["data_source"],
+                             attribution["device_id"], ";".join(attribution["networks"]),
+                             attribution["mapping_status"], attribution["exact_host_pair"]])
         return Response("\ufeff" + file.getvalue(), media_type="text/csv; charset=utf-8",
                         headers={"Content-Disposition": "attachment; filename=traffic-report.csv"})
+
+    @app.get("/api/v1/traffic/pairs")
+    async def traffic_pairs(from_time: str = Query(alias="from"), to_time: str = Query(alias="to")):
+        start, end = _window(from_time, to_time)
+        return reply(pair_traffic_report(database, start, end))
+
+    @app.get("/api/v1/traffic/pairs/export.csv")
+    async def traffic_pairs_csv(from_time: str = Query(alias="from"), to_time: str = Query(alias="to")):
+        start, end = _window(from_time, to_time)
+        report = pair_traffic_report(database, start, end)
+        file = io.StringIO()
+        writer = csv.writer(file)
+        writer.writerow(["client_device_id", "server_device_id", "from", "to", "received_bytes",
+                         "task_count", "data_source", "task_ids", "scope"])
+        for item in report["items"]:
+            writer.writerow([item["client_device_id"], item["server_device_id"], start, end, item["received_bytes"],
+                             item["task_count"], item["data_source"], ";".join(item["task_ids"]), report["scope"]])
+        return Response("\ufeff" + file.getvalue(), media_type="text/csv; charset=utf-8",
+                        headers={"Content-Disposition": "attachment; filename=pair-traffic-report.csv"})
 
     @app.get("/api/v1/service-baselines")
     async def service_baselines(device_id: str | None = None, limit: int = Query(100, ge=1, le=500),

@@ -125,7 +125,7 @@ def record_interface_status(database: Database, interface_id: str, device_id: st
 
 def save_snapshot(database: Database, device_id: str, sampled_at: str,
                   interfaces: list[dict], routes: list[dict],
-                  data_source: str = "live") -> int:
+                  data_source: str = "live", addresses: list[dict] | None = None) -> int:
     content = {
         "interfaces": {x["interface_id"]: {
             "description": x.get("description"), "admin_status": x.get("admin_status"),
@@ -136,6 +136,9 @@ def save_snapshot(database: Database, device_id: str, sampled_at: str,
             "next_hop": x.get("next_hop"), "interface_id": x.get("interface_id"),
         } for x in routes},
     }
+    content["addresses"] = ({f"{x['interface_id']}@{x['address']}": {
+        k: x[k] for k in ("interface_id", "address", "mask", "network")
+    } for x in addresses} if addresses is not None else None)
     with database.connect() as db:
         previous = db.execute(
             "SELECT snapshot_id,content FROM config_snapshots WHERE device_id=? ORDER BY snapshot_id DESC LIMIT 1",
@@ -159,8 +162,12 @@ def diff_snapshots(database: Database, before_id: int, after_id: int) -> dict:
     before = decode(by_id[before_id]["content"])
     after = decode(by_id[after_id]["content"])
     changes = []
-    for kind in ("interfaces", "routes"):
-        old, new = before[kind], after[kind]
+    incomplete_sections = []
+    for kind in ("interfaces", "routes", "addresses"):
+        old, new = before.get(kind), after.get(kind)
+        if old is None or new is None:
+            incomplete_sections.append(kind)
+            continue
         for key in sorted(old.keys() | new.keys()):
             if key not in old:
                 changes.append({"kind": kind, "id": key, "change": "added", "before": None, "after": new[key]})
@@ -171,4 +178,5 @@ def diff_snapshots(database: Database, before_id: int, after_id: int) -> dict:
     sources = {by_id[before_id]["data_source"], by_id[after_id]["data_source"]}
     return {"device_id": by_id[before_id]["device_id"], "before_id": before_id,
             "after_id": after_id, "changes": changes,
-            "data_source": next(iter(sources)) if len(sources) == 1 else "mixed"}
+            "data_source": next(iter(sources)) if len(sources) == 1 else "mixed",
+            "incomplete_sections": incomplete_sections}

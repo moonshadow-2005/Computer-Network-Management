@@ -11,7 +11,8 @@ from app.core.config import Settings
 from app.core.db import Database, utc_now
 from app.modules.fault_config import record_interface_status, record_ping, save_snapshot
 from app.modules.perf_accounting import record_counter
-from app.modules.security import record_utilization_risk
+from app.modules.security import record_snmp_access_risk, record_utilization_risk
+from app.modules.discovery import read_inventory
 
 
 IF_INDEX = "1.3.6.1.2.1.2.2.1.1"
@@ -48,7 +49,7 @@ class CollectorService:
     def stop(self) -> None:
         self._stop.set()
         if self._thread:
-            self._thread.join(timeout=3)
+            self._thread.join(timeout=30)
 
     def _loop(self) -> None:
         while not self._stop.wait(self.settings.poll_interval_s):
@@ -117,6 +118,8 @@ class CollectorService:
         device_id, address = device["device_id"], device["address"]
         sampled_at = utc_now()
         uptime = snmp.get(address, SYS_UPTIME).value
+        record_snmp_access_risk(self.database, device_id, sampled_at,
+                                self.settings.snmp_community in {"public", "private"})
         index_values = snmp.walk(address, IF_INDEX, self.settings.max_interfaces)
         if not index_values:
             raise SnmpError("interface index table is empty")
@@ -246,10 +249,14 @@ class CollectorService:
                         db.execute("DELETE FROM routes WHERE route_id=?", (old["route_id"],))
         if len(index_values) >= self.settings.max_interfaces:
             problems.append("interface walk reached configured limit")
+        discovery = read_inventory(snmp, self.database, device_id, address, sampled_at,
+                                   {x["interface_id"] for x in interfaces}, self.settings.max_addresses)
         if not problems:
-            save_snapshot(self.database, device_id, sampled_at, interfaces, routes)
+            save_snapshot(self.database, device_id, sampled_at, interfaces, routes,
+                          addresses=discovery["addresses"] if discovery["query_status"] == "ok" else None)
         return {"status": "partial" if problems else "ok", "interfaces": len(interfaces),
-                "routes": len(routes), "problems": problems}
+                "routes": len(routes), "problems": problems,
+                "network_discovery": {k: v for k, v in discovery.items() if k != "addresses"}}
 
 
 def _status(value: object) -> str | None:

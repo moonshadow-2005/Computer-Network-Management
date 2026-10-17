@@ -17,12 +17,14 @@ class Settings:
     ping_timeout_s: int = 3
     max_interfaces: int = 16
     max_routes: int = 64
+    max_addresses: int = 64
     fault_threshold: int = 3
     enable_live: bool = False
     enable_service_probe: bool = False
     enable_iperf3: bool = False
     iperf_ssh_user: str = "test-user"
     iperf_ssh_key: Path | None = None
+    iperf_allowed_devices: tuple[str, ...] = ("host-1", "host-2", "host-3")
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -34,10 +36,12 @@ class Settings:
             ping_timeout_s=max(1, int(os.environ.get("NMS_PING_TIMEOUT", "3"))),
             max_interfaces=max(1, min(64, int(os.environ.get("NMS_MAX_INTERFACES", "16")))),
             max_routes=max(1, min(128, int(os.environ.get("NMS_MAX_ROUTES", "64")))),
+            max_addresses=max(1, min(128, int(os.environ.get("NMS_MAX_ADDRESSES", "64")))),
             fault_threshold=max(1, int(os.environ.get("NMS_FAULT_THRESHOLD", "3"))),
             enable_live=os.environ.get("NMS_ENABLE_LIVE") == "1",
             enable_service_probe=os.environ.get("NMS_ENABLE_SERVICE_PROBE") == "1",
             enable_iperf3=os.environ.get("NMS_ENABLE_IPERF3") == "1",
             iperf_ssh_user=os.environ.get("NMS_IPERF_SSH_USER", "test-user"),
             iperf_ssh_key=Path(os.environ["NMS_IPERF_SSH_KEY"]) if os.environ.get("NMS_IPERF_SSH_KEY") else None,
+            iperf_allowed_devices=tuple(x.strip() for x in os.environ.get("NMS_IPERF_ALLOWED_DEVICES", "host-1,host-2,host-3").split(',') if x.strip()),
         )

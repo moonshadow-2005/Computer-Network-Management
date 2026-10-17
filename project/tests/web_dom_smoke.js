@@ -111,7 +111,18 @@ async function main() {
       if (state.failRoutes) return {ok:false, status:503, json:async () => ({status:'error', error:{message:'fixture route failure'}})};
       return reply({items:[]});
     }
-    if (path.endsWith('/topology')) return reply({nodes:[], edges:[], note:'sample'});
+    if (path.endsWith('/topology')) return reply({nodes:[
+      {node_id:'r-0-1',address:'192.168.0.1',role:'router-candidate'},
+      {node_id:'subnet-1',label:'192.168.1.0/24',role:'subnet'}],
+      edges:[{source:'r-0-1',target:'subnet-1',kind:'ip_subnet',interface_id:'r-0-1:2',address:'192.168.1.254',
+        mask:'255.255.255.0',basis:'SNMP address table',sampled_at:'2026-10-13T10:00:00Z',data_source:'sample'}],
+      identity_candidates:[],note:'sample'});
+    if (path.endsWith('/interface-addresses')) return reply({items:[{interface_id:'r-0-1:2',
+      address:'192.168.1.254',mask:'255.255.255.0',network:'192.168.1.0/24',sampled_at:'2026-10-13T10:00:00Z',data_source:'sample'}]});
+    if (path.endsWith('/diagnostics')) return reply({items:[{device_id:'host-1',stale:true,data_source:'sample',
+      findings:[{summary:'本次收到 ICMP 响应',next_steps:['检查历史与来源'],data_source:'sample'}]}]});
+    if (path.endsWith('/traffic/pairs')) return reply({items:[{client_device_id:'host-1',server_device_id:'host-2',
+      received_bytes:'2300000',task_count:1,task_ids:['sample-task'],data_source:'sample'}],note:'仅统计成功 iperf3 测试'});
     if (path.endsWith('/config-snapshots')) {
       const deviceId = new URL(url, 'http://local').searchParams.get('device_id');
       const items = [
@@ -245,6 +256,10 @@ async function main() {
   assert.match(elements.get('service-checks').textContent, /live/);
   assert.match(elements.get('service-checks').textContent, /未知（未能确认）/);
   assert.match(elements.get('service-checks').textContent, /TCP connect did not confirm port state/);
+  assert.match(elements.get('interface-addresses').textContent, /192.168.1.254.*255.255.255.0.*sample/);
+  assert.equal(countNodes(elements.get('topology-diagram'),'svg'),1);
+  assert.match(elements.get('topology-summary').textContent,/1 条采样子网关系/);
+  assert.match(elements.get('diagnostics').textContent,/历史样本.*ICMP/);
 
   const beforeSnapshot = document.getElementById('config-diff-before');
   const afterSnapshot = document.getElementById('config-diff-after');
@@ -319,6 +334,8 @@ async function main() {
   assert.equal(state.trafficRequest.direction, 'out');
   assert.match(elements.get('traffic-csv').href, /direction=out/);
   assert.match(elements.get('traffic-result').textContent, /观测接口：r-0-1:2[\s\S]*方向：仅出方向[\s\S]*400 byte/);
+  assert.match(elements.get('pair-traffic').textContent,/host-1 → host-2.*2300000.*sample/);
+  assert.match(elements.get('pair-traffic-csv').href,/traffic\/pairs\/export.csv/);
 
   document.getElementById('baseline-device').value = 'host-1';
   document.getElementById('baseline-port').value = '22';
