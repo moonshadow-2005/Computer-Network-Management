@@ -9,3 +9,4 @@
 *.PNG binary
 *.sh text eol=lf
 *.yml text eol=lf
+*.cmd text eol=crlf

@@ -194,3 +194,29 @@ def test_restart_marks_unfinished_collection_instead_of_leaving_it_running(datab
     run=database.row('SELECT * FROM collector_runs')
     assert run['state']=='failed' and run['finished_at']
     assert '重启中断' in run['details']
+
+
+def test_latest_inventory_does_not_resurrect_old_success(database):
+    first = store_inventory(database, 'r-0-1', START, [address_row()])
+    # The newest attempt has no readable address rows. The successful history stays accessible.
+    second = store_inventory(database, 'r-0-1', END, [], status='timeout', issues=['timeout'])
+
+    async def verify():
+        app = create_app(replace(Settings(), db_path=database.path, enable_live=False, poll_interval_s=0))
+        async with app.router.lifespan_context(app):
+            async with AsyncClient(transport=ASGITransport(app=app), base_url='http://test') as client:
+                current = (await client.get('/api/v1/interface-addresses?latest=true')).json()['data']
+                assert current['total'] == 0 and current['items'] == []
+                latest = (await client.get('/api/v1/network-discoveries?latest=true')).json()['data']
+                assert latest['total'] == 1 and latest['items'][0]['discovery_id'] == second['discovery_id']
+                assert latest['items'][0]['query_status'] == 'timeout'
+                history = (await client.get('/api/v1/interface-addresses?limit=1&offset=0')).json()['data']
+                assert history['total'] == 1 and history['items'][0]['discovery_id'] == first['discovery_id']
+                assert (await client.get('/api/v1/interface-addresses?latest=true&discovery_id=1')).status_code == 422
+                store_inventory(database, 'r-0-1', END, [address_row('192.168.1.253')], status='partial', issues=['limited'])
+                current = (await client.get('/api/v1/interface-addresses?latest=true&device_id=r-0-1')).json()['data']
+                assert current['total'] == 1 and current['items'][0]['address'] == '192.168.1.253'
+                missing = (await client.get('/api/v1/interface-addresses?latest=true&device_id=host-1')).json()['data']
+                assert missing['items'] == []
+                assert (await client.get('/api/v1/network-discoveries?latest=true&offset=1')).json()['data']['items'] == []
+    asyncio.run(verify())

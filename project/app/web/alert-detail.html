@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>告警详情 · 第 2 组网络管理</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script defer src="/static/auth.js"></script>
+  <script defer src="/static/alert-detail.js"></script>
+</head>
+<body class="detail-page">
+  <header><div class="head-inner">
+    <div><p class="eyebrow">课程设计 · 第 2 组</p><h1 id="detail-title">告警详情</h1>
+      <p id="detail-subtitle" class="subtitle">正在读取记录…</p></div>
+    <div class="header-actions"><span id="auth-status" class="chip">检查管理授权…</span><a id="back-home" class="back-link" href="/#fault">返回主页</a>
+      <button id="detail-refresh" type="button">刷新详情</button></div>
+  </div></header>
+  <main>
+    <div id="detail-notice" class="notice" role="status">正在读取告警信息…</div>
+    <section id="detail-overview" class="panel" hidden>
+      <div class="section-head"><h2>告警信息</h2><p>确认表示已经查看；恢复或解除由后续有效观测决定。</p></div>
+      <dl id="detail-fields" class="detail-grid"></dl>
+    </section>
+    <section id="detail-evidence-panel" class="panel" hidden>
+      <div class="section-head"><h2>关联证据</h2><p id="evidence-help"></p></div>
+      <dl id="risk-evidence" class="detail-grid" hidden></dl>
+      <div id="event-evidence" class="table-wrap"></div>
+      <div id="evidence-pager" class="pager" hidden>
+        <button id="evidence-prev" type="button" class="secondary" disabled>上一页</button>
+        <span id="evidence-position" role="status"></span>
+        <button id="evidence-next" type="button" class="secondary" disabled>下一页</button>
+      </div>
+      <details><summary>查看本次读取的原始数据</summary><pre id="detail-raw"></pre></details>
+    </section>
+    <section id="detail-manage" class="panel" hidden>
+      <div class="section-head"><h2>确认记录</h2><p id="auth-help">正在检查本机管理授权…</p></div>
+      <form id="detail-ack-form" class="form-row">
+        <label>管理令牌 <input id="detail-token" type="password" autocomplete="off" placeholder="填写 DEV 管理令牌"></label>
+        <button id="detail-ack" type="submit">确认告警</button>
+      </form>
+      <p id="detail-action-result" class="footer-note" role="status"></p>
+    </section>
+  </main>
+</body>
+</html>

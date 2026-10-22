@@ -84,7 +84,7 @@ async function main() {
       result:null,finished_at:null,error:null,data_source:'live'}], faultAcked:false};
   const faultEvent = {event_id:42,device_id:'host-1',type:'ping_unreachable',state:'active',
     first_seen:'2026-10-13T10:00:00Z',last_seen:'2026-10-13T10:00:20Z',recovered_at:null,
-    evidence_sample_ids:[1,2,3],data_source:'sample'};
+    evidence_sample_ids:Array.from({length:5000}, (_, index) => index + 1),data_source:'sample'};
   const reply = data => ({ok:true, status:200, json:async () => ({status:'ok', data})});
   const empty = {items:[], total:0};
   const fetch = async (url, options = {}) => {
@@ -220,8 +220,13 @@ async function main() {
       const query = new URL(url, 'http://local').searchParams;
       state.faultFilters.push({kind:'events', device_id:query.get('device_id')});
       return reply({items:[{...faultEvent,
+        evidence_sample_ids:faultEvent.evidence_sample_ids.slice(0, Number(query.get('evidence_limit') || 5000)),
+        evidence_count:5000,
         acknowledged_at:state.faultAcked ? '2026-10-13T10:01:00Z' : null}], total:1});
     }
+    if (path.endsWith('/risks')) return reply({items:[{risk_id:5,device_id:'host-1',rule_id:'sample-rule',
+      level:'warning',state:'open',last_seen:'2026-10-13T10:01:00Z',data_source:'sample',
+      evidence:{summary:'证据摘要'.repeat(100),basis:'不应在主页完整展开的原始字段'}}],total:1});
     if (path.endsWith('/metrics')) {
       if (state.failMetrics) return {ok:false, status:503, json:async () => ({status:'error', error:{message:'fixture failure'}})};
       return reply({items:metrics});
@@ -240,6 +245,11 @@ async function main() {
   vm.runInNewContext(fs.readFileSync('app/web/app.js', 'utf8'), context);
   await new Promise(resolve => setTimeout(resolve, 20));
 
+  assert.equal(context.preferredObservation([
+    {interface_id:'lo',description:'lo',data_source:'live',oper_status:'up'},
+    {interface_id:'bridge',description:'virbr0',data_source:'live',oper_status:'up'},
+    {interface_id:'normal',description:'ens3',data_source:'live',oper_status:'up'},
+  ]), 'normal');
   const success = {
     pingLines:countNodes(elements.get('ping-rtt-chart'), 'polyline') + countNodes(elements.get('ping-loss-chart'), 'polyline'),
     pingPoints:countNodes(elements.get('ping-rtt-chart'), 'circle') + countNodes(elements.get('ping-loss-chart'), 'circle'),
@@ -248,19 +258,22 @@ async function main() {
   };
   assert.deepEqual(success, {pingLines:2, pingPoints:6, rateLines:2, ratePoints:6});
   assert.match(elements.get('metric-trend-summary').textContent, /无效 1 条/);
-  assert.match(elements.get('ping-trend-summary').textContent, /来源 sample/);
+  assert.match(elements.get('ping-trend-summary').textContent, /来源 演示样例/);
   assert.ok(elements.get('ping-trend-device').children.some(option => option.value === 'sample-host-1'));
   assert.ok(!elements.get('ping-trend-device').children.some(option => option.value === 'sample-router'));
-  assert.match(elements.get('baselines').textContent, /host-1.*22.*是.*course SSH service.*configured/);
+  assert.match(elements.get('baselines').textContent, /host-1.*22.*是.*course SSH service.*手动配置/);
   assert.match(elements.get('service-checks').textContent, /开放/);
-  assert.match(elements.get('service-checks').textContent, /live/);
+  assert.match(elements.get('service-checks').textContent, /真实采集/);
   assert.match(elements.get('service-checks').textContent, /未知（未能确认）/);
   assert.match(elements.get('service-checks').textContent, /TCP connect did not confirm port state/);
-  assert.match(elements.get('interface-addresses').textContent, /192.168.1.254.*255.255.255.0.*sample/);
+  assert.match(elements.get('interface-addresses').textContent, /192.168.1.254.*255.255.255.0.*演示样例/);
   assert.equal(countNodes(elements.get('topology-diagram'),'svg'),1);
   assert.match(elements.get('topology-summary').textContent,/1 条采样子网关系/);
   assert.match(elements.get('diagnostics').textContent,/历史样本.*ICMP/);
 
+  document.getElementById('config-diff-summary').textContent = '保留比较结果';
+  await context.refresh(true);
+  assert.equal(elements.get('config-diff-summary').textContent, '保留比较结果');
   const beforeSnapshot = document.getElementById('config-diff-before');
   const afterSnapshot = document.getElementById('config-diff-after');
   const diffSubmit = document.getElementById('config-diff-submit');
@@ -270,7 +283,7 @@ async function main() {
   assert.equal(diffSubmit.disabled, false);
   await elements.get('config-diff-form').handlers.submit({preventDefault() {}});
   assert.deepEqual(state.configDiffRequests, [{before_id:'1', after_id:'2'}]);
-  assert.match(elements.get('config-diff-summary').textContent, /r-0-1：快照 #1 → #2，1 处变化；来源 sample/);
+  assert.match(elements.get('config-diff-summary').textContent, /r-0-1：快照 #1 → #2，1 处变化；来源 演示样例/);
   assert.match(elements.get('config-diff-changes').textContent, /接口[\s\S]*变化[\s\S]*eth0-old[\s\S]*eth0/);
 
   const configDevice = elements.get('config-diff-device');
@@ -280,7 +293,7 @@ async function main() {
   assert.equal(elements.get('config-diff-submit').disabled, false);
   await elements.get('config-diff-form').handlers.submit({preventDefault() {}});
   assert.deepEqual(state.configDiffRequests[1], {before_id:'3', after_id:'4'});
-  assert.match(elements.get('config-diff-summary').textContent, /sample-router：快照 #3 → #4，2 处变化；来源 sample/);
+  assert.match(elements.get('config-diff-summary').textContent, /sample-router：快照 #3 → #4，2 处变化；来源 演示样例/);
   assert.match(elements.get('config-diff-changes').textContent, /接口[\s\S]*路由/);
 
   configDevice.value = 'r-0-1';
@@ -314,11 +327,17 @@ async function main() {
   await new Promise(resolve => setTimeout(resolve, 20));
   assert.ok(state.faultFilters.some(item => item.kind === 'events' && item.device_id === 'host-1'));
   assert.ok(state.faultFilters.some(item => item.kind === 'ping' && item.device_id === 'host-1'));
+  assert.match(elements.get('events').textContent, /共 5000 条；编号 1、2、3…/);
+  assert.doesNotMatch(elements.get('events').textContent, /4999/);
+  assert.equal(findNodes(elements.get('events'), 'a')[0].href, '/events/42');
+  assert.equal(findNodes(elements.get('risks'), 'a')[0].href, '/risks/5');
+  assert.doesNotMatch(elements.get('risks').textContent, /不应在主页完整展开/);
+  assert.ok(findNodes(elements.get('risks'), 'span').some(node => node.className === 'alert-summary' && node.textContent.length <= 90));
   const initialAckButton = findNodes(elements.get('events'), 'button').find(node => node.textContent === '确认告警');
   assert.ok(initialAckButton);
   await initialAckButton.handlers.click();
   assert.equal(state.faultAcks.length, 0);
-  assert.match(elements.get('fault-filter-summary').textContent, /页面底部.*管理令牌/);
+  assert.match(elements.get('fault-filter-summary').textContent, /导航.*管理令牌/);
   assert.equal(initialAckButton.disabled, false);
   document.getElementById('admin-token').value = 'test-token';
   await initialAckButton.handlers.click();
@@ -333,9 +352,15 @@ async function main() {
   await elements.get('traffic-form').handlers.submit({preventDefault() {}});
   assert.equal(state.trafficRequest.direction, 'out');
   assert.match(elements.get('traffic-csv').href, /direction=out/);
+  assert.equal(new URL(elements.get('traffic-csv').href, 'http://local').searchParams.get('from'), '2026-10-13T10:00:00.000Z');
   assert.match(elements.get('traffic-result').textContent, /观测接口：r-0-1:2[\s\S]*方向：仅出方向[\s\S]*400 byte/);
-  assert.match(elements.get('pair-traffic').textContent,/host-1 → host-2.*2300000.*sample/);
+  assert.match(elements.get('pair-traffic').textContent,/host-1 → host-2.*2300000.*演示样例/);
   assert.match(elements.get('pair-traffic-csv').href,/traffic\/pairs\/export.csv/);
+  document.getElementById('traffic-from').value = 'invalid';
+  await elements.get('traffic-form').handlers.submit({preventDefault() {}});
+  assert.match(elements.get('traffic-result').textContent, /请填写有效/);
+  assert.equal(elements.get('traffic-csv').hidden,true);
+  assert.equal(elements.get('pair-traffic-csv').hidden,true);
 
   document.getElementById('baseline-device').value = 'host-1';
   document.getElementById('baseline-port').value = '22';
@@ -369,7 +394,7 @@ async function main() {
   document.getElementById('risk-id').value = '5';
   await elements.get('ack-risk').handlers.click();
   assert.deepEqual(state.securityRequests[2], {path:'/api/v1/risks/5/acknowledge', method:'POST', token:'test-token'});
-  assert.match(elements.get('security-result').textContent, /风险 #5：acknowledged/);
+  assert.match(elements.get('security-result').textContent, /风险 #5：已确认/);
 
   document.getElementById('iperf-client').value = 'host-1';
   document.getElementById('iperf-server').value = 'host-2';
@@ -388,7 +413,7 @@ async function main() {
     {path:`/api/v1/tasks/${taskId}/cancel`, method:'POST', token:'test-token'},
     {path:`/api/v1/tasks/${taskId}/cancel`, method:'POST', token:'test-token'},
   ]);
-  assert.match(elements.get('iperf-result').textContent, /任务 task-liv 返回状态：cancelled/);
+  assert.match(elements.get('iperf-result').textContent, /任务 task-liv 返回状态：已取消/);
   assert.equal(findNodes(elements.get('tasks'), 'button').filter(node => node.textContent === '取消任务').length, 0);
 
   const collectButton = elements.get('collect');

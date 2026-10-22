@@ -35,6 +35,19 @@ def _source(data: object) -> str:
     return next(iter(sources)) if len(sources) == 1 else "mixed" if sources else "none"
 
 
+def _event_view(item: dict, evidence_limit: int | None = None, database: Database | None = None) -> dict:
+    if database and item.get("interface_id"):
+        interface = database.row("SELECT description,sampled_at,data_source FROM interfaces WHERE interface_id=?",
+                                 (item["interface_id"],))
+        item["interface_context"] = interface
+        item["impact_note"] = "接口管理开启、运行关闭触发状态告警；业务用途和实际影响尚未确认，不能据此认定业务中断。"
+    evidence = decode(item["evidence_sample_ids"], [])
+    item["evidence_count"] = len(evidence)
+    item["evidence_sample_ids"] = evidence if evidence_limit is None else evidence[:evidence_limit]
+    item["evidence_truncated"] = len(item["evidence_sample_ids"]) < len(evidence)
+    return item
+
+
 def reply(data: object, *, data_source: str | None = None, status_code: int = 200) -> JSONResponse:
     return JSONResponse({"request_id": str(uuid4()), "status": "ok",
                          "data_source": data_source or _source(data),
@@ -147,6 +160,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if not x_admin_token or not hmac.compare_digest(token, x_admin_token):
             raise HTTPException(401, "invalid admin token")
 
+    @app.get("/api/v1/auth/status", dependencies=[Depends(require_write)])
+    async def auth_status():
+        return reply({"authenticated": True}, data_source="none")
+
+    @app.get("/static/auth.js", include_in_schema=False)
+    async def auth_javascript():
+        return Response((WEB / "auth.js").read_text(encoding="utf-8"),
+                        media_type="application/javascript; charset=utf-8")
+
     @app.get("/")
     async def index():
         return HTMLResponse((WEB / "index.html").read_text(encoding="utf-8"))
@@ -156,9 +178,31 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return Response((WEB / "style.css").read_text(encoding="utf-8"),
                         media_type="text/css; charset=utf-8")
 
+    @app.get("/static/views.js", include_in_schema=False)
+    async def views_javascript():
+        return Response((WEB / "views.js").read_text(encoding="utf-8"),
+                        media_type="application/javascript; charset=utf-8")
+
     @app.get("/static/app.js", include_in_schema=False)
     async def javascript():
         return Response((WEB / "app.js").read_text(encoding="utf-8"),
+                        media_type="application/javascript; charset=utf-8")
+
+    @app.get("/events/{event_id}", include_in_schema=False)
+    async def event_page(event_id: int):
+        exists = database.row("SELECT event_id FROM events WHERE event_id=?", (event_id,))
+        return HTMLResponse((WEB / "alert-detail.html").read_text(encoding="utf-8"),
+                            status_code=200 if exists else 404)
+
+    @app.get("/risks/{risk_id}", include_in_schema=False)
+    async def risk_page(risk_id: int):
+        exists = database.row("SELECT risk_id FROM risks WHERE risk_id=?", (risk_id,))
+        return HTMLResponse((WEB / "alert-detail.html").read_text(encoding="utf-8"),
+                            status_code=200 if exists else 404)
+
+    @app.get("/static/alert-detail.js", include_in_schema=False)
+    async def alert_javascript():
+        return Response((WEB / "alert-detail.js").read_text(encoding="utf-8"),
                         media_type="application/javascript; charset=utf-8")
 
     @app.get("/api/v1/health")
@@ -178,6 +222,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             counts[table] = database.row(f"SELECT COUNT(*) AS n FROM {table}")["n"]
         counts["active_events"] = database.row("SELECT COUNT(*) AS n FROM events WHERE state='active'")["n"]
         counts["open_risks"] = database.row("SELECT COUNT(*) AS n FROM risks WHERE state='open'")["n"]
+        counts["unresolved_risks"] = database.row("SELECT COUNT(*) AS n FROM risks WHERE state IN ('open','acknowledged')")["n"]
         run = database.row("SELECT * FROM collector_runs ORDER BY run_id DESC LIMIT 1")
         if run:
             run["details"] = decode(run["details"], [])
@@ -208,15 +253,36 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/api/v1/network-discoveries")
     async def network_discoveries(device_id: str | None = None, limit: int = Query(100, ge=1, le=500),
-                                  offset: int = Query(0, ge=0)):
-        data = _list(database, "network_discoveries", {"device_id": device_id}, limit, offset, "discovery_id DESC")
+                                  offset: int = Query(0, ge=0), latest: bool = False):
+        if latest:
+            where = "d.discovery_id=(SELECT n.discovery_id FROM network_discoveries n WHERE n.device_id=d.device_id ORDER BY n.sampled_at DESC,n.discovery_id DESC LIMIT 1)"
+            params = ()
+            if device_id is not None:
+                where += " AND d.device_id=?"
+                params = (device_id,)
+            total = database.row(f"SELECT COUNT(*) AS n FROM network_discoveries d WHERE {where}", params)["n"]
+            items = database.rows(f"SELECT d.* FROM network_discoveries d WHERE {where} ORDER BY d.device_id LIMIT ? OFFSET ?", params + (limit, offset))
+            data = {"items": items, "total": total, "limit": limit, "offset": offset}
+        else:
+            data = _list(database, "network_discoveries", {"device_id": device_id}, limit, offset, "discovery_id DESC")
         for item in data["items"]:
             item["issues"] = decode(item["issues"], [])
         return reply(data)
 
     @app.get("/api/v1/interface-addresses")
     async def interface_addresses(device_id: str | None = None, discovery_id: int | None = None,
-                                  limit: int = Query(100, ge=1, le=500), offset: int = Query(0, ge=0)):
+                                  limit: int = Query(100, ge=1, le=500), offset: int = Query(0, ge=0), latest: bool = False):
+        if latest:
+            if discovery_id is not None:
+                raise HTTPException(422, "latest and discovery_id cannot be combined")
+            where = "a.discovery_id=(SELECT n.discovery_id FROM network_discoveries n WHERE n.device_id=a.device_id ORDER BY n.sampled_at DESC,n.discovery_id DESC LIMIT 1)"
+            params = ()
+            if device_id is not None:
+                where += " AND a.device_id=?"
+                params = (device_id,)
+            total = database.row(f"SELECT COUNT(*) AS n FROM interface_addresses a WHERE {where}", params)["n"]
+            items = database.rows(f"SELECT a.* FROM interface_addresses a WHERE {where} ORDER BY a.device_id,a.if_index,a.address LIMIT ? OFFSET ?", params + (limit, offset))
+            return reply({"items": items, "total": total, "limit": limit, "offset": offset})
         return reply(_list(database, "interface_addresses", {"device_id": device_id, "discovery_id": discovery_id},
                            limit, offset, "address_id DESC"))
 
@@ -246,15 +312,52 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def events(device_id: str | None = None, state: str | None = None,
                from_time: str | None = Query(default=None, alias="from"),
                to_time: str | None = Query(default=None, alias="to"),
-               limit: int = Query(100, ge=1, le=500), offset: int = Query(0, ge=0)):
+               limit: int = Query(100, ge=1, le=500), offset: int = Query(0, ge=0),
+               evidence_limit: int | None = Query(None, ge=0, le=50)):
         if state not in (None, "active", "recovered"):
             raise HTTPException(422, "invalid event state")
         start, end = _window(from_time, to_time)
         data = _list(database, "events", {"device_id": device_id, "state": state}, limit, offset,
                      "event_id DESC", time_column="last_seen", start=start, end=end)
         for item in data["items"]:
-            item["evidence_sample_ids"] = decode(item["evidence_sample_ids"], [])
+            _event_view(item, evidence_limit, database)
         return reply(data)
+
+    @app.get("/api/v1/events/{event_id}")
+    async def event_detail(event_id: int, evidence_limit: int = Query(3, ge=0, le=50)):
+        item = database.row("SELECT * FROM events WHERE event_id=?", (event_id,))
+        if item is None:
+            raise HTTPException(404, "event not found")
+        return reply(_event_view(item, evidence_limit, database), data_source=item["data_source"])
+
+    @app.get("/api/v1/events/{event_id}/evidence")
+    async def event_evidence(event_id: int, limit: int = Query(20, ge=1, le=100),
+                             offset: int = Query(0, ge=0)):
+        event = database.row("SELECT * FROM events WHERE event_id=?", (event_id,))
+        if event is None:
+            raise HTTPException(404, "event not found")
+        evidence = decode(event["evidence_sample_ids"], [])
+        # Return newest references first without constructing an unbounded SQL IN clause.
+        ids = list(reversed(evidence))[offset:offset + limit]
+        samples = []
+        if ids and event["type"] in {"ping_unreachable", "interface_oper_down"}:
+            placeholders = ",".join("?" for _ in ids)
+            if event["type"] == "ping_unreachable":
+                samples = database.rows(
+                    f"SELECT * FROM ping_samples WHERE sample_id IN ({placeholders}) "
+                    "AND device_id=? AND data_source=?", tuple(ids) + (event["device_id"], event["data_source"]))
+            else:
+                samples = database.rows(
+                    f"SELECT * FROM interface_status_samples WHERE sample_id IN ({placeholders}) "
+                    "AND interface_id=? AND data_source=?", tuple(ids) + (event["interface_id"], event["data_source"]))
+        by_id = {sample["sample_id"]: sample for sample in samples}
+        items = [dict(by_id[sample_id], sample_available=True) if sample_id in by_id else
+                 {"sample_id": sample_id, "sample_available": False,
+                  "note": "原始样本缺失或不属于此告警；保留证据编号，不推断测量结果。"}
+                 for sample_id in ids]
+        return reply({"items": items, "total": len(evidence), "limit": limit, "offset": offset,
+                      "event_id": event_id, "kind": event["type"], "order": "newest_first"},
+                     data_source=event["data_source"])
 
     @app.get("/api/v1/diagnostics")
     async def diagnostics(device_id: str | None = None):
@@ -447,6 +550,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         for item in data["items"]:
             item["evidence"] = decode(item["evidence"], {})
         return reply(data)
+
+    @app.get("/api/v1/risks/{risk_id}")
+    async def risk_detail(risk_id: int):
+        item = database.row("SELECT * FROM risks WHERE risk_id=?", (risk_id,))
+        if item is None:
+            raise HTTPException(404, "risk not found")
+        item["evidence"] = decode(item["evidence"], {})
+        return reply(item, data_source=item["data_source"])
 
     @app.post("/api/v1/risks/{risk_id}/acknowledge", dependencies=[Depends(require_write)])
     async def acknowledge_risk(risk_id: int):

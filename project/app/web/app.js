@@ -10,6 +10,26 @@ let faultHistoryRequestId = 0;
 let cachedBaselines = [];
 let baselineInitialized = false;
 let currentHealth = null;
+let currentInterfaces = [];
+const tablePages = new Map();
+const labels = {live:'真实采集',sample:'演示样例',document:'课程文档',configured:'手动配置',mixed:'混合来源',none:'无来源',
+  active:'持续中',recovered:'已恢复',open:'待处理',acknowledged:'已确认',resolved:'已解除',ok:'正常',partial:'不完整',
+  failed:'失败',error:'错误',timeout:'超时',unavailable:'未知',pending:'等待中',running:'执行中',succeeded:'成功',cancelled:'已取消',
+  candidate:'候选身份','router-candidate':'路由器候选','test-host':'测试主机',development:'开发主机',up:'开启',down:'关闭',testing:'测试中',warning:'警告',
+  snmp_common_default_read_access:'默认 SNMP 凭据可读',possible_telnet_service_tcp_23:'TCP/23 潜在明文管理入口',
+  unexpected_service_open:'预期关闭的服务开放',expected_service_closed:'预期开放的服务关闭',sustained_high_utilization:'连续高利用率',observed:'地址表观测',unknown:'未知',ambiguous:'归属不唯一',
+  first_or_previous_invalid_sample:'首次或前值无效',sample_gap:'采样间隔过长',query_failed:'查询失败',source_changed:'来源改变',
+  non_increasing_time:'采样时间未递增',agent_restarted:'采集代理重启',counter_discontinuity:'计数器不连续',counter_reset_or_wrap:'计数器复位或回绕'};
+function named(value) {
+  if (String(value).startsWith('unexpected_open_tcp_')) return `预期关闭的 TCP/${String(value).slice(20)} 开放`;
+  if (String(value).startsWith('high_utilization_')) return `接口持续高利用率：${String(value).slice(17)}`;
+  return labels[value] || show(value);
+}
+function preferredObservation(items) {
+  const score = x => (x.data_source === 'live' ? 8 : 0) + (x.oper_status === 'up' ? 4 : 0)
+    - (/^(lo$|virbr|docker|veth|br-|tun|tap)/i.test(x.description || '') ? 100 : 0);
+  return items.slice().sort((a,b) => score(b)-score(a))[0]?.interface_id;
+}
 
 const networkActions = {
   collect: {button:'collect', note:'collect-availability', label:'真实采集',
@@ -44,18 +64,21 @@ function updateNetworkControls(health) {
     const reason = networkActionReason(name);
     $(action.button).disabled = Boolean(reason);
     $(action.button).setAttribute('title', reason);
-    $(action.note).textContent = reason || `${action.label}已启用；操作前请填写管理令牌。`;
+    $(action.note).textContent = reason || `${action.label}已启用；${globalThis.NmsAuth?.local ? '本机管理授权已就绪。' : '操作前请填写管理令牌。'}`;
   }
 }
 
 async function api(path, options = {}) {
-  if (options.method?.toUpperCase() === 'POST' && !options.headers?.['X-Admin-Token']?.trim()) {
-    throw new Error('请先在页面底部“运行与采集 → 管理令牌”填写启动服务时设置的令牌。');
+  if (globalThis.NmsAuth) options = await globalThis.NmsAuth.prepare(options);
+  if (options.method?.toUpperCase() === 'POST' && !options.headers?.['X-Admin-Token']?.trim()
+      && options.headers?.['X-NMS-Local-Auth'] !== '1') {
+    throw new Error('请先在导航“运行 → 管理令牌”填写启动服务时设置的令牌。');
   }
   const response = await fetch(base + path, options);
   const body = await response.json();
   if (!response.ok || body.status !== 'ok') {
     if (response.status === 401) {
+      if (globalThis.NmsAuth?.local) throw new Error('本机保存的授权已失效，请更新本机加密凭据并重新打开连接。');
       throw new Error('管理令牌不正确，请在“运行与采集”填写与启动服务时 NMS_API_TOKEN 相同的值；刷新或重新打开页面后需要重新填写。');
     }
     if (response.status === 503 && body.error?.message === 'write operations require NMS_API_TOKEN') {
@@ -65,11 +88,32 @@ async function api(path, options = {}) {
   }
   return body.data;
 }
-function localTime(value) { return value ? new Date(value).toLocaleString('zh-CN') : '未知'; }
+function localTime(value) { return value ? new Date(value).toLocaleString('zh-CN', {timeZone:'Asia/Shanghai'}) : '未知'; }
 function show(value) { return value === null || value === undefined || value === '' ? '未知' : String(value); }
 function badge(value) {
   const span = document.createElement('span'); span.className = 'badge ' + String(value || '').replace(/[^a-z]/g, '');
-  span.textContent = show(value); return span;
+  span.textContent = named(value); span.setAttribute('title', show(value)); return span;
+}
+function alertSummary(text) {
+  const span = document.createElement('span');
+  span.className = 'alert-summary';
+  const value = String(text || '暂无证据摘要');
+  span.textContent = value.length > 90 ? value.slice(0, 89) + '…' : value;
+  return span;
+}
+function alertLink(kind, id) {
+  const link = document.createElement('a');
+  link.href = `/${kind}/${encodeURIComponent(id)}`;
+  link.textContent = '查看详情';
+  link.setAttribute('aria-label', `查看${kind === 'events' ? '故障告警' : '安全风险'} #${id} 详情`);
+  return link;
+}
+function riskSummary(item) {
+  const evidence = item.evidence || {};
+  if (evidence.summary) return evidence.summary;
+  if (evidence.interface_id) return `接口 ${evidence.interface_id} 利用率达到 ${evidence.threshold_pct ?? '配置的'}% 阈值`;
+  if (evidence.port) return `TCP/${evidence.port} 观测状态：${evidence.observed_state || '未知'}；依据服务基线检查`;
+  return evidence.basis || '规则触发记录；完整证据见详情';
 }
 function table(id, headers, rows) {
   const root = $(id); root.replaceChildren();
@@ -77,12 +121,26 @@ function table(id, headers, rows) {
   const t = document.createElement('table'), head = document.createElement('thead'), tr = document.createElement('tr');
   for (const h of headers) { const th = document.createElement('th'); th.textContent = h; tr.append(th); } head.append(tr); t.append(head);
   const body = document.createElement('tbody');
-  for (const cells of rows) {
+  const size = 10;
+  const page = Math.min(tablePages.get(id) || 0, Math.max(0, Math.ceil(rows.length / size) - 1));
+  tablePages.set(id, page);
+  for (const cells of rows.slice(page * size, (page + 1) * size)) {
     const row = document.createElement('tr');
     for (const value of cells) { const td = document.createElement('td'); td.append(value instanceof Node ? value : document.createTextNode(show(value))); row.append(td); }
     body.append(row);
   }
   t.append(body); root.append(t);
+  if (rows.length > size) {
+    const pager = document.createElement('div'); pager.className = 'pager';
+    const prev = document.createElement('button'), next = document.createElement('button'), info = document.createElement('span');
+    prev.textContent = '上一页'; next.textContent = '下一页';
+    prev.disabled = page === 0; next.disabled = (page + 1) * size >= rows.length;
+    info.textContent = `${page * size + 1}–${Math.min((page + 1) * size, rows.length)} / 已载入 ${rows.length} 条`;
+    for (const [button, step] of [[prev,-1],[next,1]]) button.addEventListener('click', () => {
+      tablePages.set(id, page + step); table(id, headers, rows);
+    });
+    pager.append(prev,info,next); root.append(pager);
+  }
 }
 function failed(id, error) { $(id).textContent = `读取失败：${error.message}`; }
 function syncBaselineForm() {
@@ -102,6 +160,11 @@ function renderResource(result, name, id, headers, rows, failures) {
     return {items:[]};
   }
   table(id, headers, rows(result.value.items));
+  if (result.value.total > result.value.items.length) {
+    const note = document.createElement('p'); note.className = 'footer-note';
+    note.textContent = `本次载入 ${result.value.items.length} / ${result.value.total} 条；完整记录可通过分页 API 查询。`;
+    $(id).append(note);
+  }
   return result.value;
 }
 
@@ -163,7 +226,7 @@ function formatAxisValue(value, unit) {
   return `${value.toFixed(value >= 10 ? 1 : 2)} ${unit}`;
 }
 function chartTime(value) {
-  return value ? new Date(value).toLocaleString('zh-CN', {month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit'}) : '未知';
+  return value ? new Date(value).toLocaleString('zh-CN', {timeZone:'Asia/Shanghai', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit'}) : '未知';
 }
 function renderLineChart(containerId, samples, series) {
   const root = $(containerId);
@@ -249,7 +312,7 @@ function renderLineChart(containerId, samples, series) {
 
 function sourceSummary(samples) {
   const sources = [...new Set(samples.map(item => item.data_source).filter(Boolean))];
-  return sources.length ? sources.join('、') : 'none';
+  return sources.length ? sources.map(named).join('、') : '无来源';
 }
 function sampleRange(samples) {
   return samples.length
@@ -322,7 +385,7 @@ async function loadMetricTrend(interfaceId) {
     table('metrics', ['接口', '时间', '入速率', '出速率', '入/出利用率', '有效性', '来源'], samples.slice(-30).reverse().map(item => [
       item.interface_id, localTime(item.sampled_at), formatRate(item.valid ? item.in_rate_bps : null), formatRate(item.valid ? item.out_rate_bps : null),
       `${!item.valid || item.in_util_pct === null ? '未知' : item.in_util_pct.toFixed(2) + '%'} / ${!item.valid || item.out_util_pct === null ? '未知' : item.out_util_pct.toFixed(2) + '%'}`,
-      item.valid ? badge('ok') : show(item.invalid_reason), badge(item.data_source)
+      item.valid ? badge('ok') : named(item.invalid_reason), badge(item.data_source)
     ]));
   } catch (error) {
     if (requestId !== metricTrendRequestId) return;
@@ -339,7 +402,7 @@ async function loadFaultHistory(deviceId) {
   const requestId = ++faultHistoryRequestId;
   const summary = $('fault-filter-summary');
   summary.textContent = '正在读取所选设备最近 30 条故障与连通性历史…';
-  const params = new URLSearchParams({limit:'30'});
+  const params = new URLSearchParams({limit:'30', evidence_limit:'3'});
   if (deviceId) params.set('device_id', deviceId);
   const [eventResult, pingResult, diagnosticResult] = await Promise.allSettled([
     api('/events?' + params), api('/ping-samples?' + params),
@@ -349,7 +412,7 @@ async function loadFaultHistory(deviceId) {
 
   if (eventResult.status === 'fulfilled') {
     const events = eventResult.value.items;
-    table('events', ['设备', '类型', '状态', '确认', '确认时间', '首次', '最近', '证据', '来源', '操作'], events.map(item => {
+    table('events', ['编号', '设备 / 接口', '类型', '状态', '确认', '最近', '证据摘要', '来源', '操作'], events.map(item => {
       const acknowledge = document.createElement('button');
       acknowledge.type = 'button';
       acknowledge.disabled = Boolean(item.acknowledged_at);
@@ -368,10 +431,16 @@ async function loadFaultHistory(deviceId) {
           summary.textContent = `确认故障事件 #${item.event_id} 失败：${error.message}`;
         }
       });
-      return [item.device_id, item.type, badge(item.state),
-        badge(item.acknowledged_at ? '已确认' : '待确认'), localTime(item.acknowledged_at),
-        localTime(item.first_seen), localTime(item.last_seen),
-        item.evidence_sample_ids.join(', '), badge(item.data_source), acknowledge];
+      const actions = document.createElement('div'); actions.className = 'alert-actions';
+      actions.append(alertLink('events', item.event_id), acknowledge);
+      const ids = item.evidence_sample_ids || [];
+      const count = item.evidence_count ?? ids.length;
+      const preview = count ? `共 ${count} 条；编号 ${ids.slice(0, 3).join('、')}${count > 3 ? '…' : ''}` : '暂无关联样本';
+      const types = {ping_unreachable:'主机连续不可达', interface_oper_down:'接口运行状态异常'};
+      return [item.event_id, item.interface_id ? `${item.interface_id} · ${item.interface_context?.description || '接口名称未取得'}` : item.device_id,
+        (types[item.type] || item.type) + (item.interface_id ? '（业务影响待确认）' : ''), badge(item.state),
+        badge(item.acknowledged_at ? '已确认' : '待确认'), localTime(item.last_seen),
+        alertSummary(preview), badge(item.data_source), actions];
     }));
   } else failed('events', eventResult.reason);
 
@@ -387,8 +456,8 @@ async function loadFaultHistory(deviceId) {
     table('diagnostics', ['对象', '观测时效', '诊断', '依据', '建议', '来源'],
       diagnosticResult.value.items.flatMap(device => device.findings?.length ? device.findings.map(item => [
         device.device_id, device.stale ? '历史样本（超过 5 分钟）' : localTime(device.sampled_at),
-        item.summary, JSON.stringify({ping_sample_id:item.ping_sample_id, interface_id:item.interface_id,
-          related_down_interfaces:item.related_down_interfaces}), item.next_steps.join('；'), badge(item.data_source)
+        item.summary, [item.ping_sample_id && `连通性样本 #${item.ping_sample_id}`, item.interface_id && `接口 ${item.interface_id}`,
+          item.related_down_interfaces?.length && `关联异常接口 ${item.related_down_interfaces.join('、')}`].filter(Boolean).join('；') || '见最近观测', item.next_steps.join('；'), badge(item.data_source)
       ]) : [[device.device_id, '未取得诊断样本', '未知', '—', '执行一轮采集后查看', badge(device.data_source)]]));
   } else failed('diagnostics', diagnosticResult.reason);
 
@@ -415,7 +484,7 @@ function updateSnapshotDiffControls() {
   const afterSelect = $('config-diff-after');
   const entries = cachedSnapshots.slice().sort((a, b) => a.snapshot_id - b.snapshot_id).map(item => ({
     value: item.snapshot_id,
-    label: `#${item.snapshot_id} · ${localTime(item.sampled_at)} · ${item.data_source}`
+    label: `#${item.snapshot_id} · ${localTime(item.sampled_at)} · ${named(item.data_source)}`
   }));
   const oldBefore = beforeSelect.value;
   const oldAfter = afterSelect.value;
@@ -466,7 +535,8 @@ async function loadSnapshotChoices(deviceId) {
   if (requestId === snapshotRequestId) updateSnapshotDiffControls();
 }
 
-async function refresh() {
+async function refresh(background = false) {
+  background = background === true;
   const requestId = ++refreshRequestId;
   const isCurrent = () => requestId === refreshRequestId;
   $('refresh').disabled = true;
@@ -474,10 +544,10 @@ async function refresh() {
     const [healthResult, overviewResult, devicesResult, interfacesResult, routesResult, baselinesResult,
       checksResult, risksResult, runsResult, snapshotsResult, topologyResult, tasksResult,
       addressesResult, discoveriesResult] = await Promise.allSettled([
-      api('/health'), api('/overview'), api('/devices'), api('/interfaces'), api('/routes'),
+      api('/health'), api('/overview'), api('/devices'), api('/interfaces?limit=500'), api('/routes?limit=500'),
       api('/service-baselines'), api('/service-checks?limit=30'), api('/risks'),
       api('/collector-runs?limit=10'), api('/config-snapshots?limit=10'), api('/topology'), api('/tasks?limit=10'),
-      api('/interface-addresses?limit=100'), api('/network-discoveries?limit=12')
+      api('/interface-addresses?latest=true&limit=500'), api('/network-discoveries?latest=true&limit=500')
     ]);
     if (!isCurrent()) return;
     const failures = [];
@@ -500,16 +570,22 @@ async function refresh() {
       $('count-interfaces').textContent = counts.interfaces;
       $('count-events').textContent = counts.active_events;
       $('count-risks').textContent = counts.open_risks;
+      $('risk-count-note').textContent = `待处理风险 ${counts.open_risks} 条；未解除风险（含已确认）${counts.unresolved_risks ?? '未知'} 条。确认仅表示已知悉。`;
+      const run = overviewResult.value.latest_collector_run;
+      $('latest-collection').textContent = run
+        ? `最近采集开始：${localTime(run.started_at)}；完成：${localTime(run.finished_at)}；状态：${named(run.state)}。页面刷新仅重新读取已有数据。`
+        : '尚无采集轮次；请查看数据来源，样例和课程清单不等于实时测量。';
     } else {
       failures.push('概览');
       for (const id of ['count-devices', 'count-interfaces', 'count-events', 'count-risks']) $(id).textContent = '未知';
     }
     const devices = renderResource(devicesResult, '设备', 'devices', ['标识', '地址', '角色', '身份', '来源'],
-      items => items.map(x => [x.device_id, x.address, x.role, x.identity_status, badge(x.data_source)]), failures);
+      items => items.map(x => [x.device_id, x.address, named(x.role), named(x.identity_status), badge(x.data_source)]), failures);
     const interfaces = renderResource(interfacesResult, '接口', 'interfaces', ['接口', '描述', '管理/运行', '参考速率', '采样时间', '状态', '来源'],
       items => items.map(x => [x.interface_id, x.description,
-      `${show(x.admin_status)} / ${show(x.oper_status)}`, x.reference_speed_bps ? `${x.reference_speed_bps} bit/s` : '未知',
+      `${named(x.admin_status)} / ${named(x.oper_status)}`, x.reference_speed_bps ? `${x.reference_speed_bps} bit/s` : '未知',
       localTime(x.sampled_at), badge(x.query_status), badge(x.data_source)]), failures);
+    currentInterfaces = interfaces.items;
     renderResource(routesResult, '路由', 'routes', ['对象', '目的/掩码', '下一跳', '接口', '采样时间', '来源'],
       items => items.map(x => [x.device_id, `${x.destination} / ${show(x.mask)}`, x.next_hop, x.interface_id,
         localTime(x.sampled_at), badge(x.data_source)]), failures);
@@ -532,7 +608,7 @@ async function refresh() {
             const task = await api(`/tasks/${encodeURIComponent(x.task_id)}/cancel`, {
               method:'POST', headers:{'X-Admin-Token':$('admin-token').value},
             });
-            $('iperf-result').textContent = `任务 ${x.task_id.slice(0,8)} 返回状态：${task.task_state}。`;
+            $('iperf-result').textContent = `任务 ${x.task_id.slice(0,8)} 返回状态：${named(task.task_state)}。`;
             await refresh();
           } catch (error) {
             cancel.disabled = false;
@@ -561,11 +637,12 @@ async function refresh() {
       const state = badge(x.state); state.textContent = labels[x.state] || show(x.state);
       return [x.device_id, x.port, localTime(x.observed_at), state, x.error || '—', badge(x.data_source)];
     }), failures);
-    renderResource(risksResult, '风险', 'risks', ['编号', '设备', '规则', '级别', '状态', '最近', '证据', '来源'],
-      items => items.map(x => [x.risk_id, x.device_id, x.rule_id,
-        x.level, badge(x.state), localTime(x.last_seen), JSON.stringify(x.evidence), badge(x.data_source)]), failures);
+    renderResource(risksResult, '风险', 'risks', ['编号', '设备', '规则', '级别', '状态', '最近', '证据摘要', '来源', '详情'],
+      items => items.map(x => [x.risk_id, x.device_id, named(x.rule_id),
+        named(x.level), badge(x.state), localTime(x.last_seen), alertSummary(riskSummary(x)), badge(x.data_source),
+        alertLink('risks', x.risk_id)]), failures);
     renderResource(runsResult, '采集记录', 'runs', ['开始', '完成', '状态', '详情'], items => items.map(x => [localTime(x.started_at), localTime(x.finished_at),
-      badge(x.state), x.details.map(y => `${y.device_id || '系统'}: ${y.status}`).join('；')]), failures);
+      badge(x.state), x.details.map(y => `${y.device_id || '系统'}: ${named(y.status)}`).join('；')]), failures);
     const snapshots = renderResource(snapshotsResult, '配置快照', 'snapshots', ['编号', '对象', '时间', '接口数', '路由数', '来源'],
       items => items.map(x => [x.snapshot_id, x.device_id,
         localTime(x.sampled_at), Object.keys(x.content.interfaces).length, Object.keys(x.content.routes).length, badge(x.data_source)]), failures);
@@ -579,7 +656,7 @@ async function refresh() {
       configDevices[0]?.device_id || '';
     setOptions(deviceSelect, configDevices.map(item => ({value: item.device_id,
       label: `${item.device_id} · ${item.address}`})), preferredDevice, item => item.label);
-    await loadSnapshotChoices(deviceSelect.value);
+    if (!background || !cachedSnapshots.length) await loadSnapshotChoices(deviceSelect.value);
     if (!isCurrent()) return;
     const faultSelect = $('fault-device');
     const previousFaultDevice = faultSelect.value;
@@ -596,9 +673,9 @@ async function refresh() {
       label:`${item.device_id} · ${item.address}`})), previousPingDevice || pingDevices[0]?.device_id, item => item.label);
     const metricSelect = $('metric-trend-interface');
     const previousInterface = metricSelect.value;
-    const preferredInterface = previousInterface || interfaces.items.find(item => item.data_source === 'live')?.interface_id || interfaces.items[0]?.interface_id;
+    const preferredInterface = previousInterface || preferredObservation(interfaces.items);
     setOptions(metricSelect, interfaces.items.map(item => ({value:item.interface_id,
-      label:`${item.interface_id} · ${item.description || '未命名接口'} · ${item.data_source}`})), preferredInterface, item => item.label);
+      label:`${item.interface_id} · ${item.description || '未命名接口'} · ${named(item.data_source)}`})), preferredInterface, item => item.label);
     await Promise.all([loadPingTrend(pingSelect.value), loadMetricTrend(metricSelect.value)]);
     if (!isCurrent()) return;
     if (topologyResult.status === 'fulfilled') {
@@ -615,13 +692,14 @@ async function refresh() {
       option.textContent = interfacesResult.status === 'rejected' ? '接口读取失败，请刷新重试' : '暂无接口样本';
       select.append(option);
     }
-    for (const x of interfaces.items) { const option = document.createElement('option'); option.value = x.interface_id; option.textContent = x.interface_id; select.append(option); }
-    if (current && interfaces.items.some(x => x.interface_id === current)) select.value = current;
+    for (const x of interfaces.items) { const option = document.createElement('option'); option.value = x.interface_id; option.textContent = `${x.interface_id} · ${x.description || '未命名接口'}`; select.append(option); }
+    select.value = interfaces.items.some(x => x.interface_id === current) ? current : preferredObservation(interfaces.items) || '';
+    $('view-updated').textContent = `视图更新：${localTime(new Date().toISOString())}（北京时间）${failures.length ? ' · 部分失败' : ''}`;
     $('notice').textContent = failures.length
       ? `部分数据读取失败：${failures.join('、')}。成功区块仍已更新，请检查对应提示后重试。`
       : ordinaryNotice;
   } catch (error) {
-    if (isCurrent()) $('notice').textContent = `读取失败：${error.message}`;
+    if (isCurrent()) { $('notice').textContent = `读取失败：${error.message}`; $('view-updated').textContent = '本次刷新失败，请重试；已显示的记录可能是历史数据。'; }
   } finally {
     if (isCurrent()) $('refresh').disabled = false;
   }
@@ -648,8 +726,8 @@ $('config-diff-form').addEventListener('submit', async event => {
     const params = new URLSearchParams({before_id: beforeId, after_id: afterId});
     const result = await api('/config-diff?' + params);
     $('config-diff-summary').textContent = result.changes.length
-      ? `${result.device_id}：快照 #${result.before_id} → #${result.after_id}，${result.changes.length} 处变化；来源 ${result.data_source}。`
-      : `${result.device_id}：快照 #${result.before_id} → #${result.after_id}，没有配置变化；来源 ${result.data_source}。`;
+      ? `${result.device_id}：快照 #${result.before_id} → #${result.after_id}，${result.changes.length} 处变化；来源 ${named(result.data_source)}。`
+      : `${result.device_id}：快照 #${result.before_id} → #${result.after_id}，没有配置变化；来源 ${named(result.data_source)}。`;
     if (result.incomplete_sections?.length) $('config-diff-summary').textContent += ` 未完整采样的部分（${result.incomplete_sections.join('、')}）未比较。`;
     table('config-diff-changes', ['类别', '标识', '变化', '变更前', '变更后'], result.changes.map(item => [
       {interfaces:'接口',routes:'路由',addresses:'IP/掩码'}[item.kind] || item.kind, item.id,
@@ -668,8 +746,13 @@ $('config-diff-form').addEventListener('submit', async event => {
 $('traffic-form').addEventListener('submit', async event => {
   event.preventDefault(); $('traffic-csv').hidden = true;
   const direction = $('traffic-direction').value;
-  const params = new URLSearchParams({interface_id: $('traffic-interface').value,
-    from: new Date($('traffic-from').value).toISOString(), to: new Date($('traffic-to').value).toISOString(), direction});
+  $('pair-traffic-csv').hidden = true;
+  let params;
+  try {
+    const start = new Date($('traffic-from').value + '+08:00'), end = new Date($('traffic-to').value + '+08:00');
+    if (!Number.isFinite(+start) || !Number.isFinite(+end) || start >= end) throw new Error('请填写有效且起始早于结束的北京时间。');
+    params = new URLSearchParams({interface_id: $('traffic-interface').value, from:start.toISOString(), to:end.toISOString(), direction});
+  } catch (error) { $('traffic-result').textContent = `统计失败：${error.message}`; $('pair-traffic').replaceChildren(); return; }
   try {
     const x = await api('/traffic?' + params);
     const directionLabel = {in:'仅入方向',out:'仅出方向',both:'入方向与出方向'}[direction] || direction;
@@ -677,8 +760,8 @@ $('traffic-form').addEventListener('submit', async event => {
       : direction === 'out' ? `出方向：${show(x.out_bytes)} byte`
         : `入方向：${show(x.in_bytes)} byte\n出方向：${show(x.out_bytes)} byte`;
     const a = x.attribution;
-    const mapping = a ? `\n观测设备：${show(a.device_id)}\n子网：${a.networks.join('、') || '未确认'}（${a.mapping_status}）\n入方向：${a.in_direction}；出方向：${a.out_direction}\n${a.note}` : '';
-    $('traffic-result').textContent = `观测接口：${x.observation_point || x.interface_id}\n时间窗：${localTime(x.from)} 至 ${localTime(x.to)}\n方向：${directionLabel}\n${totals}\n覆盖率：${x.coverage_pct}%\n完整窗口：${x.complete ? '是' : '否'}\n无效区间：${x.invalid_intervals.length}\n来源：${x.data_source}\n${x.note}${mapping}`;
+    const mapping = a ? `\n观测设备：${show(a.device_id)}\n子网：${a.networks.join('、') || '未确认'}（${named(a.mapping_status)}）\n入方向：${a.in_direction}；出方向：${a.out_direction}\n${a.note}` : '';
+    $('traffic-result').textContent = `观测接口：${x.observation_point || x.interface_id}\n时间窗：${localTime(x.from)} 至 ${localTime(x.to)}\n方向：${directionLabel}\n${totals}\n覆盖率：${x.coverage_pct}%\n完整窗口：${x.complete ? '是' : '否'}\n无效区间：${x.invalid_intervals.length}\n来源：${named(x.data_source)}\n${x.note}${mapping}`;
     $('traffic-csv').href = base + '/traffic/export.csv?' + params; $('traffic-csv').hidden = false;
   } catch (error) { $('traffic-result').textContent = `统计失败：${error.message}`; }
   $('pair-traffic-csv').hidden = true;
@@ -700,7 +783,7 @@ $('collect').addEventListener('click', async () => {
   try {
     const result = await api('/collect', {method:'POST', headers:{'Content-Type':'application/json',
       'X-Admin-Token':$('admin-token').value}, body:'{}'});
-    $('operation-result').textContent = `采集 #${result.run_id}：${result.state}`; await refresh();
+    $('operation-result').textContent = `采集 #${result.run_id}：${named(result.state)}`; await refresh();
   } catch (error) { $('operation-result').textContent = `采集失败：${error.message}`; }
   finally { $('collect').disabled = Boolean(networkActionReason('collect')); }
 });
@@ -713,7 +796,7 @@ $('iperf-form').addEventListener('submit', async event => {
     const task = await api('/tasks/iperf3', {method:'POST', headers:{'Content-Type':'application/json',
       'X-Admin-Token':$('admin-token').value}, body:JSON.stringify({client_device_id:$('iperf-client').value,
         server_device_id:$('iperf-server').value,duration_s:2,target_bps:10000000})});
-    $('iperf-result').textContent = `任务 ${task.task_id}：${task.task_state}。完成后刷新查看结果。`; await refresh();
+    $('iperf-result').textContent = `任务 ${task.task_id}：${named(task.task_state)}。启用自动刷新时会更新结果，也可点击“刷新数据”。`; await refresh();
   } catch (error) { $('iperf-result').textContent = `任务创建失败：${error.message}`; }
 });
 $('baseline-form').addEventListener('submit', async event => {
@@ -747,8 +830,11 @@ $('ack-risk').addEventListener('click', async () => {
   if (!Number.isInteger(id) || id < 1) { $('security-result').textContent = '请填写有效的风险编号。'; return; }
   try {
     const risk = await api(`/risks/${id}/acknowledge`, {method:'POST', headers:{'X-Admin-Token':$('admin-token').value}});
-    $('security-result').textContent = `风险 #${id}：${risk.state}`; await refresh();
+    $('security-result').textContent = `风险 #${id}：${named(risk.state)}`; await refresh();
   } catch (error) { $('security-result').textContent = `确认失败：${error.message}`; }
 });
 $('refresh').addEventListener('click', refresh);
+if (globalThis.NmsAuth) globalThis.NmsAuth.ready.then(() => {
+  if (currentHealth) updateNetworkControls(currentHealth);
+});
 refresh();

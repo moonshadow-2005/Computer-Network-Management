@@ -67,3 +67,28 @@ journalctl -u nms-team2 -n 50 --no-pager
 ```
 
 需要停止或启动时分别用 `systemctl stop nms-team2`、`systemctl start nms-team2`。浏览器通过本机 SSH 转发访问，具体方法见[实验配置](../docs/实验环境配置.md)。管理服务保持回环监听，数据库升级前停止旧服务并使用支持 Unix 私有权限的文件系统。
+
+## 本机加密自动授权
+
+`local_gateway.py` 使用 Windows 标准 DPAPI 的 CurrentUser 范围加密令牌，密文位于 `%LOCALAPPDATA%\NMS-Team2\admin-token.dpapi`，目录 ACL 只授予当前 Windows 用户访问。加密密钥由 Windows 管理；`store` 子命令只从标准输入接收令牌，`check` 仅报告可解密性，均不输出明文。DPAPI 用法参考 [Microsoft 文档](https://learn.microsoft.com/en-us/windows/win32/seccrypto/example-c-program-using-cryptprotectdata)。
+
+当前维护电脑的启动脚本按以下链路启动，并在就绪前验证授权：
+
+```text
+浏览器 → 127.0.0.1:8000 本机授权代理
+       → 127.0.0.1:18080 SSH 转发 → DEV 127.0.0.1:8000
+```
+
+网页调用只读 `/api/v1/auth/status` 检查授权；本机代理向固定上游附加 `X-Admin-Token`，页面仅获得 `authenticated=true` 和本机入口标志。浏览器请求只携带非秘密的 `X-NMS-Local-Auth: 1`，不会取得真实令牌。主页和详情页均显示授权状态，刷新、跳转后自动重新检查。
+
+代理严格检查 Host、Origin、Fetch Metadata 和自定义请求头，拒绝跨站、嵌入页面和 CORS 预检；只允许列出的管理 POST 路径，限制请求体大小，不记录请求内容。代理和 SSH 均仅监听 `127.0.0.1`。此方式用于可信的个人维护电脑，本机进程仍属于信任范围。
+
+本机既有 `start_windows_loopback_tunnel.ps1 -UseCoursePassword -Detached` 现在会读取密文并启动代理和 SSH；`stop_windows_loopback_tunnel.ps1` 会识别本项目进程后关闭二者。两个脚本及课程认证材料仍属于本地配置，不包含在公开仓库。重启 Windows 后再次运行启动脚本即可；DEV 改变令牌时，需重新取得令牌并写入本机密文，再重启连接。直接 SSH 访问和未配置本机凭据的电脑继续使用手动令牌。
+
+## Windows 一键打开网页
+
+`open_windows_dashboard.ps1` 是已有本机连接的启动入口，`project/一键打开真实网页.cmd` 调用它并在失败时保留窗口。维护者外层的 `计网管/一键打开网络管理网页.cmd` 也调用同一脚本。入口不携带实际令牌或课程口令。
+
+启动流程：用互斥锁避免重复建立连接 → 核对本机 8000 的进程归属 → 已就绪则复用 → 校验加密凭据 → 确认现有 WarpProxy / 40000 模式并连接 WARP → 必要时重建本项目失效的通路 → 检查 health、自动授权和回环监听 → 打开默认浏览器。占用端口的其他进程不会被停止。模式不符时提示处理，不自动切换全局网络。
+
+诊断时可运行 `powershell.exe -NoProfile -ExecutionPolicy Bypass -File deploy/open_windows_dashboard.ps1 -NoBrowser`，只启动和检查，不打开浏览器。仍需本机已有的 start/stop 脚本、代理脚本、固定主机密钥、课程资料和当前 Windows 账户的 DPAPI 凭据；这些私有资料不随仓库提供。
