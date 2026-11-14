@@ -42,7 +42,8 @@ function page(path) {
       evidence:{summary:'<script>原样显示，不执行</script>',vulnerability_confirmed:false,basis:'样例依据'}});
   };
   vm.runInNewContext(source, {window:{location:{pathname:path}}, document:{getElementById:get,
-    createElement:tag => new Element(tag)}, fetch});
+    createElement:tag => new Element(tag)}, fetch,
+    NmsRequest:async (url,options) => {const response=await fetch(url,options);return {response,body:await response.json()};}});
   return {get,state};
 }
 

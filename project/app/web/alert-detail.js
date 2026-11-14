@@ -51,8 +51,7 @@ function fields(root, entries) {
 }
 async function request(path, options = {}) {
   if (globalThis.NmsAuth) options = await globalThis.NmsAuth.prepare(options);
-  const response = await fetch('/api/v1/' + path, options);
-  const body = await response.json();
+  const {response, body} = await globalThis.NmsRequest('/api/v1/' + path, options);
   if (!response.ok || body.status !== 'ok') {
     if (response.status === 404) throw new Error('这条记录不存在，可能编号有误或已被移除。');
     if (response.status === 401) throw new Error(globalThis.NmsAuth?.local

@@ -234,6 +234,10 @@ async function main() {
     if (path.endsWith('/traffic')) {
       const query = new URL(url, 'http://local').searchParams;
       state.trafficRequest = Object.fromEntries(query.entries());
+      if (state.deferTraffic) {
+        state.deferTraffic = false;
+        await new Promise(resolve => {state.releaseTraffic = resolve;});
+      }
       return reply({interface_id:'r-0-1:2', observation_point:'r-0-1:2', from:query.get('from'), to:query.get('to'),
         direction:query.get('direction'), in_bytes:null, out_bytes:'400', coverage_pct:100, complete:true,
         invalid_intervals:[], data_source:'sample', note:'sample fixture'});
@@ -241,7 +245,8 @@ async function main() {
     return reply(empty);
   };
 
-  const context = {document, Node:ElementStub, fetch, URL, URLSearchParams};
+  const context = {document, Node:ElementStub, fetch, URL, URLSearchParams,
+    NmsRequest:async (url,options) => {const response=await fetch(url,options);return {response,body:await response.json()};}};
   vm.runInNewContext(fs.readFileSync('app/web/app.js', 'utf8'), context);
   await new Promise(resolve => setTimeout(resolve, 20));
 
@@ -356,6 +361,21 @@ async function main() {
   assert.match(elements.get('traffic-result').textContent, /观测接口：r-0-1:2[\s\S]*方向：仅出方向[\s\S]*400 byte/);
   assert.match(elements.get('pair-traffic').textContent,/host-1 → host-2.*2300000.*演示样例/);
   assert.match(elements.get('pair-traffic-csv').href,/traffic\/pairs\/export.csv/);
+  // A slow prior window must not overwrite a newer report or its CSV links.
+  state.deferTraffic = true;
+  const oldReport = elements.get('traffic-form').handlers.submit({preventDefault() {}});
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(elements.get('pair-traffic').textContent,'');
+  assert.match(elements.get('pair-traffic-note').textContent,/正在查询/);
+  document.getElementById('traffic-from').value = '2026-10-13T18:00:01';
+  await elements.get('traffic-form').handlers.submit({preventDefault() {}});
+  const currentReport = elements.get('traffic-result').textContent;
+  const currentCsv = elements.get('traffic-csv').href;
+  const currentPairCsv = elements.get('pair-traffic-csv').href;
+  state.releaseTraffic(); await oldReport;
+  assert.equal(elements.get('traffic-result').textContent,currentReport);
+  assert.equal(elements.get('traffic-csv').href,currentCsv);
+  assert.equal(elements.get('pair-traffic-csv').href,currentPairCsv);
   document.getElementById('traffic-from').value = 'invalid';
   await elements.get('traffic-form').handlers.submit({preventDefault() {}});
   assert.match(elements.get('traffic-result').textContent, /请填写有效/);

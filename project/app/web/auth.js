@@ -1,14 +1,40 @@
 // The local gateway keeps the DEV token outside the browser.
 (() => {
+  // Bound both headers and JSON body reads. Never retry a timed-out mutation:
+  // the server may already have accepted it even if its response was lost.
+  globalThis.NmsRequest = async (url, options = {}) => {
+    const controller = new AbortController();
+    const abort = () => controller.abort();
+    if (options.signal?.aborted) abort();
+    else options.signal?.addEventListener('abort', abort, {once:true});
+    let timedOut = false;
+    // Manual collection waits for the whole round (currently >30s). Give
+    // writes 75s, covering the local gateway's 70s upstream deadline.
+    const mutation = options.method?.toUpperCase() === 'POST';
+    const timeoutMs = mutation ? 75000 : 30000;
+    const timer = setTimeout(() => { timedOut = true; controller.abort(); }, timeoutMs);
+    try {
+      const response = await fetch(url, {...options, signal:controller.signal});
+      const body = await response.json();
+      return {response, body};
+    } catch (error) {
+      if (timedOut) throw new Error(mutation
+        ? '请求超过 75 秒未完成。操作可能已提交，请恢复连接并查看记录后再决定是否重试。'
+        : '读取超过 30 秒未完成，请检查连接后点击刷新重试。');
+      throw error;
+    } finally {
+      clearTimeout(timer);
+      options.signal?.removeEventListener('abort', abort);
+    }
+  };
   const state = {local:false, available:false};
   const ready = (async () => {
     try {
-      const response = await fetch('/api/v1/auth/status', {
+      const {response, body} = await globalThis.NmsRequest('/api/v1/auth/status', {
         headers:{'X-NMS-Local-Auth':'1'}, cache:'no-store',
       });
       state.available = response.headers.get('X-NMS-Local-Gateway') === '1';
       if (response.ok && state.available) {
-        const body = await response.json();
         state.local = body.status === 'ok' && body.data?.authenticated === true;
       }
     } catch { /* Direct connections retain the manual token input. */ }

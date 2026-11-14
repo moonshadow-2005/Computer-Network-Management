@@ -14,8 +14,24 @@ import pytest
 from app.core.config import Settings
 from app.main import create_app
 from deploy.local_gateway import Gateway
+from deploy import local_gateway
 
 TOKEN = "test-token-for-local-gateway"
+
+
+@pytest.mark.parametrize("failure", [None, FileNotFoundError("missing credential"),
+                                    RuntimeError("credential belongs to another account")])
+def test_quiet_credential_check_returns_status_without_output(monkeypatch, capsys, failure):
+    def load():
+        if failure is not None:
+            raise failure
+        return TOKEN
+
+    monkeypatch.setattr(local_gateway, "load_token", load)
+    monkeypatch.setattr("sys.argv", ["local_gateway.py", "check", "--quiet"])
+    assert local_gateway.main() == (1 if failure else 0)
+    output = capsys.readouterr()
+    assert output.out == output.err == ""
 
 
 @contextmanager

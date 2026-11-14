@@ -1,0 +1,62 @@
+{
+  "slide_count": 15,
+  "planned_seconds": 940,
+  "powerpoint_rendered": true,
+  "text_overflow": 0,
+  "markdown_technical_note_blocks": 15,
+  "markdown_local_links_valid": true,
+  "markdown_question_count": 157,
+  "architecture_embedded_as_one_image": true,
+  "all_used_screenshots_embedded_unchanged": true,
+  "speaker_notes_all_slides": true,
+  "desktop_views": [
+    "accounting",
+    "config",
+    "fault",
+    "operations",
+    "overview",
+    "performance",
+    "security"
+  ],
+  "mobile_views": [
+    "accounting",
+    "config",
+    "fault",
+    "operations",
+    "overview",
+    "performance",
+    "security"
+  ],
+  "browser_csv_matches_historical_task": true,
+  "timeout_then_real_refresh_verified": true,
+  "production_js_matches_worktree": true,
+  "browser_js_exceptions": 0,
+  "incidental_http_failures": [
+    {
+      "url": "http://127.0.0.1:8000/favicon.ico",
+      "status": 404
+    }
+  ],
+  "artifacts": {
+    "第2组_网络管理系统_中期汇报.pptx": {
+      "bytes": 1158391,
+      "sha256": "8cf4c385531125323333254789cb9c4397eeafea3fd76d007473d2124c34a343"
+    },
+    "第2组_网络管理系统_中期汇报.pdf": {
+      "bytes": 1248388,
+      "sha256": "f92b88937722be69531d6ecae521a43ddc0de4b448c98a61f263f809c3603592"
+    },
+    "中期汇报_讲解稿.md": {
+      "bytes": 79550,
+      "sha256": "ba97ae462270b5c71b9e7a67cb7f42cdff3c61f6e12c93b0e045ede1ece11c28"
+    },
+    "项目架构图.png": {
+      "bytes": 315026,
+      "sha256": "d897d1e86b5079374938caa7b3b47bd8b69c731ef801093de397ab349533bce6"
+    },
+    "项目架构图.svg": {
+      "bytes": 8493,
+      "sha256": "a0554981ae2d81adc1c7d858dda48bb40d2d7aaff686989721b67deafb197c58"
+    }
+  }
+}

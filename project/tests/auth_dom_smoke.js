@@ -10,7 +10,7 @@ async function check(authenticated, marker, unavailable = false) {
     return nodes.get(id);
   };
   const requests = [];
-  const context = {document:{getElementById:get}, fetch:async (path, options) => {
+  const context = {AbortController,setTimeout,clearTimeout,document:{getElementById:get}, fetch:async (path, options) => {
     requests.push({path, options});
     if (unavailable) throw new Error('unavailable');
     return {ok:authenticated, headers:{get:() => marker},

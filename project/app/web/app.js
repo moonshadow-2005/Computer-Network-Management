@@ -74,8 +74,7 @@ async function api(path, options = {}) {
       && options.headers?.['X-NMS-Local-Auth'] !== '1') {
     throw new Error('请先在导航“运行 → 管理令牌”填写启动服务时设置的令牌。');
   }
-  const response = await fetch(base + path, options);
-  const body = await response.json();
+  const {response, body} = await globalThis.NmsRequest(base + path, options);
   if (!response.ok || body.status !== 'ok') {
     if (response.status === 401) {
       if (globalThis.NmsAuth?.local) throw new Error('本机保存的授权已失效，请更新本机加密凭据并重新打开连接。');
@@ -743,18 +742,25 @@ $('config-diff-form').addEventListener('submit', async event => {
   }
 });
 
+let trafficRequestId = 0;
 $('traffic-form').addEventListener('submit', async event => {
+  const requestId = ++trafficRequestId;
+  const isCurrent = () => requestId === trafficRequestId;
   event.preventDefault(); $('traffic-csv').hidden = true;
   const direction = $('traffic-direction').value;
   $('pair-traffic-csv').hidden = true;
+  $('traffic-result').textContent = '正在统计所选时间窗…';
+  $('pair-traffic').replaceChildren();
+  $('pair-traffic-note').textContent = '正在查询同一时间窗的测试传输量…';
   let params;
   try {
     const start = new Date($('traffic-from').value + '+08:00'), end = new Date($('traffic-to').value + '+08:00');
     if (!Number.isFinite(+start) || !Number.isFinite(+end) || start >= end) throw new Error('请填写有效且起始早于结束的北京时间。');
     params = new URLSearchParams({interface_id: $('traffic-interface').value, from:start.toISOString(), to:end.toISOString(), direction});
-  } catch (error) { $('traffic-result').textContent = `统计失败：${error.message}`; $('pair-traffic').replaceChildren(); return; }
+  } catch (error) { $('traffic-result').textContent = `统计失败：${error.message}`; $('pair-traffic-note').textContent = '时间范围无效，未执行统计。'; return; }
   try {
     const x = await api('/traffic?' + params);
+    if (!isCurrent()) return;
     const directionLabel = {in:'仅入方向',out:'仅出方向',both:'入方向与出方向'}[direction] || direction;
     const totals = direction === 'in' ? `入方向：${show(x.in_bytes)} byte`
       : direction === 'out' ? `出方向：${show(x.out_bytes)} byte`
@@ -763,18 +769,19 @@ $('traffic-form').addEventListener('submit', async event => {
     const mapping = a ? `\n观测设备：${show(a.device_id)}\n子网：${a.networks.join('、') || '未确认'}（${named(a.mapping_status)}）\n入方向：${a.in_direction}；出方向：${a.out_direction}\n${a.note}` : '';
     $('traffic-result').textContent = `观测接口：${x.observation_point || x.interface_id}\n时间窗：${localTime(x.from)} 至 ${localTime(x.to)}\n方向：${directionLabel}\n${totals}\n覆盖率：${x.coverage_pct}%\n完整窗口：${x.complete ? '是' : '否'}\n无效区间：${x.invalid_intervals.length}\n来源：${named(x.data_source)}\n${x.note}${mapping}`;
     $('traffic-csv').href = base + '/traffic/export.csv?' + params; $('traffic-csv').hidden = false;
-  } catch (error) { $('traffic-result').textContent = `统计失败：${error.message}`; }
+  } catch (error) { if (!isCurrent()) return; $('traffic-result').textContent = `统计失败：${error.message}`; }
   $('pair-traffic-csv').hidden = true;
   const pairParams = new URLSearchParams({from:params.get('from'), to:params.get('to')});
   try {
     const pairs = await api('/traffic/pairs?' + pairParams);
+    if (!isCurrent()) return;
     table('pair-traffic', ['客户端 → 服务端', '接收字节', '成功任务数', '任务依据', '来源'],
       pairs.items.map(item => [`${item.client_device_id} → ${item.server_device_id}`, item.received_bytes,
         item.task_count, item.task_ids.join('、'), badge(item.data_source)]));
     $('pair-traffic-note').textContent = pairs.note || '仅统计成功 iperf3 测试传输量。';
     $('pair-traffic-csv').href = base + '/traffic/pairs/export.csv?' + pairParams;
     $('pair-traffic-csv').hidden = false;
-  } catch (error) { failed('pair-traffic-note', error); $('pair-traffic').replaceChildren(); }
+  } catch (error) { if (!isCurrent()) return; failed('pair-traffic-note', error); $('pair-traffic').replaceChildren(); }
 });
 $('collect').addEventListener('click', async () => {
   const reason = networkActionReason('collect');

@@ -91,4 +91,6 @@ journalctl -u nms-team2 -n 50 --no-pager
 
 启动流程：用互斥锁避免重复建立连接 → 核对本机 8000 的进程归属 → 已就绪则复用 → 校验加密凭据 → 确认现有 WarpProxy / 40000 模式并连接 WARP → 必要时重建本项目失效的通路 → 检查 health、自动授权和回环监听 → 打开默认浏览器。占用端口的其他进程不会被停止。模式不符时提示处理，不自动切换全局网络。
 
-诊断时可运行 `powershell.exe -NoProfile -ExecutionPolicy Bypass -File deploy/open_windows_dashboard.ps1 -NoBrowser`，只启动和检查，不打开浏览器。仍需本机已有的 start/stop 脚本、代理脚本、固定主机密钥、课程资料和当前 Windows 账户的 DPAPI 凭据；这些私有资料不随仓库提供。
+诊断时可运行 `powershell.exe -NoProfile -ExecutionPolicy Bypass -File deploy/open_windows_dashboard.ps1 -NoBrowser`，只启动和检查，不打开浏览器。仍需本机已有的 start/stop 脚本、固定主机密钥和课程资料；这些私有资料不随仓库提供。
+
+2026-11-10 本机迁移修复：未安装 WARP 时，启动器检查 DEV 的 IPv6 SSH 直连，并向本机 start 脚本传入 `-Direct`；有 WARP 时继续沿用原代理模式。当前账户缺少或无法解密 DPAPI 凭据时，传入 `-InitializeAuthorization`，通过严格主机密钥校验的 SSH 读取 DEV 现有令牌，先验证只读授权接口，再加密保存到当前账户。过程不修改 DEV 配置，不显示令牌，也不生成明文凭据文件。公开启动器与私有 start 脚本须配套更新；旧版 start 脚本不支持这两个参数。

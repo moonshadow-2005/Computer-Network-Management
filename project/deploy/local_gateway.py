@@ -256,7 +256,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("store", help="Encrypt the token supplied only through stdin.")
-    commands.add_parser("check", help="Check decryptability without printing the token.")
+    check = commands.add_parser("check", help="Check decryptability without printing the token.")
+    check.add_argument("--quiet", action="store_true", help="Report availability only through the exit code.")
     run = commands.add_parser("serve")
     run.add_argument("--port", type=int, default=8000)
     run.add_argument("--upstream-port", type=int, default=18080)
@@ -268,13 +269,15 @@ def main():
             print(json.dumps({"stored": True, "encryption": "DPAPI CurrentUser", "path": str(path)}))
         elif args.command == "check":
             load_token()
-            print(json.dumps({"decryptable": True, "encryption": "DPAPI CurrentUser"}))
+            if not args.quiet:
+                print(json.dumps({"decryptable": True, "encryption": "DPAPI CurrentUser"}))
         else:
             if not args.ssh_command or args.port == args.upstream_port:
                 raise ValueError("Expected a separate upstream port and an SSH command.")
             serve(args)
     except (OSError, ValueError, RuntimeError) as exc:
-        print(f"Local authorization: {exc}", file=sys.stderr)
+        if not getattr(args, "quiet", False):
+            print(f"Local authorization: {exc}", file=sys.stderr)
         return 1
     return 0
 
