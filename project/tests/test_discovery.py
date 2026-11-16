@@ -168,7 +168,7 @@ def test_pair_statistics_keep_sources_and_windows_separate_and_csv_agrees(databa
     asyncio.run(verify())
 
 
-def test_v2_to_v3_migration_backs_up_and_preserves_existing_samples(tmp_path):
+def test_v2_to_current_migration_backs_up_and_preserves_existing_samples(tmp_path):
     path=tmp_path/'v2.sqlite3'
     with sqlite3.connect(path) as db:
         db.executescript(SCHEMA.split(NETWORK_TABLES[0],1)[0])
@@ -178,13 +178,13 @@ def test_v2_to_v3_migration_backs_up_and_preserves_existing_samples(tmp_path):
     database.initialize()
     assert database.row("SELECT value FROM metadata WHERE key='keep'")["value"] == "v2"
     assert database.row("PRAGMA user_version")["user_version"] == CURRENT_SCHEMA_VERSION
-    backup=list((tmp_path/'backups').glob('v2.pre-v2-to-v3-*.sqlite3'))
+    backup=list((tmp_path/'backups').glob(f'v2.pre-v2-to-v{CURRENT_SCHEMA_VERSION}-*.sqlite3'))
     assert len(backup)==1 and backup[0].stat().st_mode & 0o777 == 0o600
     with sqlite3.connect(backup[0]) as old:
         assert old.execute("PRAGMA user_version").fetchone()[0] == 2
         assert not old.execute("SELECT name FROM sqlite_master WHERE name='interface_addresses'").fetchall()
     database.initialize()
-    assert len(list((tmp_path/'backups').glob('v2.pre-v2-to-v3-*.sqlite3')))==1
+    assert len(list((tmp_path/'backups').glob(f'v2.pre-v2-to-v{CURRENT_SCHEMA_VERSION}-*.sqlite3')))==1
 
 
 def test_restart_marks_unfinished_collection_instead_of_leaving_it_running(database):

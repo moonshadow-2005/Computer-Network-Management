@@ -150,7 +150,29 @@ NETWORK_TABLES = (
 )
 SCHEMA += "\n" + ";\n".join(NETWORK_TABLES) + ";\n"
 
-CURRENT_SCHEMA_VERSION = 3
+SCAN_TABLES = (
+    """CREATE TABLE IF NOT EXISTS scan_sensors (
+      sensor_id TEXT PRIMARY KEY, device_id TEXT NOT NULL REFERENCES devices(device_id),
+      session_id TEXT NOT NULL, state TEXT NOT NULL, started_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL, last_packet_at TEXT, config TEXT NOT NULL,
+      counters TEXT NOT NULL, error TEXT, data_source TEXT NOT NULL
+    )""",
+    """CREATE TABLE IF NOT EXISTS scan_windows (
+      window_id INTEGER PRIMARY KEY AUTOINCREMENT,
+      sensor_id TEXT NOT NULL REFERENCES scan_sensors(sensor_id), session_id TEXT NOT NULL,
+      source_ip TEXT NOT NULL, target_ip TEXT NOT NULL, source_scope TEXT NOT NULL,
+      window_start TEXT NOT NULL, window_seconds INTEGER NOT NULL,
+      first_seen TEXT NOT NULL, last_seen TEXT NOT NULL, syn_packets INTEGER NOT NULL,
+      port_count INTEGER NOT NULL, ports TEXT NOT NULL, ports_truncated INTEGER NOT NULL,
+      active_minutes INTEGER NOT NULL, matched INTEGER NOT NULL, data_source TEXT NOT NULL,
+      UNIQUE(sensor_id,session_id,source_ip,target_ip,window_start,window_seconds)
+    )""",
+    "CREATE INDEX IF NOT EXISTS idx_scan_windows_time ON scan_windows(last_seen)",
+    "CREATE INDEX IF NOT EXISTS idx_scan_windows_match ON scan_windows(matched,last_seen)",
+)
+SCHEMA += "\n" + ";\n".join(SCAN_TABLES) + ";\n"
+
+CURRENT_SCHEMA_VERSION = 4
 
 
 DOCUMENT_DEVICES = (
@@ -271,6 +293,10 @@ class Database:
             for statement in NETWORK_TABLES:
                 db.execute(statement)
             version = 3
+        if version < 4:
+            for statement in SCAN_TABLES:
+                db.execute(statement)
+            version = 4
         if version != CURRENT_SCHEMA_VERSION:
             raise RuntimeError(f"no migration path from database schema {version}")
 

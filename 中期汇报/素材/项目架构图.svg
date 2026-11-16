@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="2400" height="1370" viewBox="0 0 2400 1370"><rect width="2400" height="1370" fill="white"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="2400" height="1500" viewBox="0 0 2400 1500"><rect width="2400" height="1500" fill="white"/>
 <rect x="40" y="30" width="2320" height="300" rx="22" fill="#EFF7FA" stroke="#DCE6ED" stroke-width="3"/>
 <text x="75" y="85" font-family="Microsoft YaHei, sans-serif" font-size="34" font-weight="700" fill="#087F96">维护电脑 · Windows</text>
 <rect x="90" y="112" width="620" height="170" rx="22" fill="#FFFFFF" stroke="#DCE6ED" stroke-width="3"/>
@@ -17,18 +17,18 @@
 <polygon points="880,196 861.7382211937538,204.1552090611914 861.7382211937538,187.8447909388086" fill="#087F96"/>
 <polyline points="1540,196 1710,196" fill="none" stroke="#087F96" stroke-width="6"/>
 <polygon points="1710,196 1691.7382211937538,204.1552090611914 1691.7382211937538,187.8447909388086" fill="#087F96"/>
-<polyline points="2010,282 2010,377 405,377 405,480" fill="none" stroke="#087F96" stroke-width="6"/>
-<polygon points="405,480 396.8447909388086,461.7382211937538 413.1552090611914,461.7382211937538" fill="#087F96"/>
+<polyline points="2010,282 2010,377 405,377 405,525" fill="none" stroke="#087F96" stroke-width="6"/>
+<polygon points="405,525 396.8447909388086,506.7382211937538 413.1552090611914,506.7382211937538" fill="#087F96"/>
 <text x="900" y="375" font-family="Microsoft YaHei, sans-serif" font-size="32" font-weight="400" fill="#087F96">加密通道 → DEV 127.0.0.1:8000</text>
-<rect x="40" y="435" width="2320" height="440" rx="22" fill="#F3F7FA" stroke="#DCE6ED" stroke-width="3"/>
-<text x="75" y="487" font-family="Microsoft YaHei, sans-serif" font-size="34" font-weight="700" fill="#087F96">DEV · systemd 管理的单进程服务（FastAPI / Uvicorn）</text>
+<rect x="40" y="435" width="2320" height="600" rx="22" fill="#F3F7FA" stroke="#DCE6ED" stroke-width="3"/>
+<text x="75" y="487" font-family="Microsoft YaHei, sans-serif" font-size="34" font-weight="700" fill="#087F96">DEV · 主应用单 worker + 独立被动监听服务</text>
 <rect x="90" y="525" width="620" height="235" rx="22" fill="#FFFFFF" stroke="#DCE6ED" stroke-width="3"/>
 <text x="114" y="589" font-family="Microsoft YaHei, sans-serif" font-size="40" font-weight="700" fill="#12304B">网页与 API</text>
 <text x="114" y="643" font-family="Microsoft YaHei, sans-serif" font-size="31" font-weight="400" fill="#193A50">静态资源、查询与 CSV 导出</text>
 <text x="114" y="686" font-family="Microsoft YaHei, sans-serif" font-size="31" font-weight="400" fill="#193A50">写操作校验令牌与功能开关</text>
 <text x="114" y="729" font-family="Microsoft YaHei, sans-serif" font-size="31" font-weight="400" fill="#193A50">查询读取数据库，不触发 SNMP</text>
 <rect x="880" y="525" width="660" height="235" rx="22" fill="#FFFFFF" stroke="#DCE6ED" stroke-width="3"/>
-<text x="904" y="589" font-family="Microsoft YaHei, sans-serif" font-size="40" font-weight="700" fill="#12304B">SQLite · schema v3</text>
+<text x="904" y="589" font-family="Microsoft YaHei, sans-serif" font-size="40" font-weight="700" fill="#12304B">SQLite · schema v4</text>
 <text x="904" y="643" font-family="Microsoft YaHei, sans-serif" font-size="31" font-weight="400" fill="#193A50">原始观测、指标、快照、任务</text>
 <text x="904" y="686" font-family="Microsoft YaHei, sans-serif" font-size="31" font-weight="400" fill="#193A50">故障 / 风险及其证据与状态</text>
 <text x="904" y="729" font-family="Microsoft YaHei, sans-serif" font-size="31" font-weight="400" fill="#193A50">来源、时间、单位随记录保存</text>
@@ -43,23 +43,30 @@
 <polyline points="1710,625 1540,625" fill="none" stroke="#087F96" stroke-width="6"/>
 <polygon points="1540,625 1558.2617788062462,616.8447909388086 1558.2617788062462,633.1552090611914" fill="#087F96"/>
 <text x="1570" y="595" font-family="Microsoft YaHei, sans-serif" font-size="29" font-weight="400" fill="#087F96">写入</text>
-<polyline points="405,760 405,822 2010,822 2010,760" fill="none" stroke="#087F96" stroke-width="6"/>
-<polygon points="2010,760 2018.1552090611915,778.2617788062462 2001.8447909388085,778.2617788062462" fill="#087F96"/>
-<text x="830" y="814" font-family="Microsoft YaHei, sans-serif" font-size="30" font-weight="400" fill="#087F96">管理请求 → 调度 / 确认 / 受控测试</text>
-<rect x="40" y="1000" width="2320" height="325" rx="22" fill="#EFF7FA" stroke="#DCE6ED" stroke-width="3"/>
-<text x="75" y="1052" font-family="Microsoft YaHei, sans-serif" font-size="34" font-weight="700" fill="#087F96">课程实验网 · 已登记目标</text>
-<rect x="90" y="1080" width="1060" height="180" rx="22" fill="#FFFFFF" stroke="#DCE6ED" stroke-width="3"/>
-<text x="114" y="1144" font-family="Microsoft YaHei, sans-serif" font-size="40" font-weight="700" fill="#12304B">路由候选地址 × 4</text>
-<text x="114" y="1198" font-family="Microsoft YaHei, sans-serif" font-size="31" font-weight="400" fill="#193A50">SNMP v2c：接口、路由、IP / 掩码、计数器</text>
-<text x="114" y="1241" font-family="Microsoft YaHei, sans-serif" font-size="31" font-weight="400" fill="#193A50">课程未开放 SET / TRAP；候选地址数不等于物理设备数</text>
-<rect x="1280" y="1080" width="1030" height="180" rx="22" fill="#FFFFFF" stroke="#DCE6ED" stroke-width="3"/>
-<text x="1304" y="1144" font-family="Microsoft YaHei, sans-serif" font-size="40" font-weight="700" fill="#12304B">测试主机 × 3</text>
-<text x="1304" y="1198" font-family="Microsoft YaHei, sans-serif" font-size="31" font-weight="400" fill="#193A50">ping：连通性 / RTT / 丢包；指定 TCP 端口基线检查</text>
-<text x="1304" y="1241" font-family="Microsoft YaHei, sans-serif" font-size="31" font-weight="400" fill="#193A50">iperf3：当前仅 host-1、host-2 获准，限时限速</text>
-<polyline points="1930,875 1930,928 620,928 620,1080" fill="none" stroke="#087F96" stroke-width="6"/>
-<polygon points="620,1080 611.8447909388086,1061.7382211937538 628.1552090611914,1061.7382211937538" fill="#087F96"/>
-<text x="775" y="973" font-family="Microsoft YaHei, sans-serif" font-size="32" font-weight="400" fill="#087F96">SNMP 只读轮询</text>
-<polyline points="2180,875 2180,1080" fill="none" stroke="#087F96" stroke-width="6"/>
-<polygon points="2180,1080 2171.8447909388087,1061.7382211937538 2188.1552090611913,1061.7382211937538" fill="#087F96"/>
-<text x="1570" y="973" font-family="Microsoft YaHei, sans-serif" font-size="32" font-weight="400" fill="#087F96">ping / TCP / SSH + iperf3</text>
+<rect x="90" y="800" width="960" height="180" rx="22" fill="#FFFFFF" stroke="#DCE6ED" stroke-width="3"/>
+<text x="114" y="864" font-family="Microsoft YaHei, sans-serif" font-size="40" font-weight="700" fill="#12304B">被动扫描监听 · 独立 systemd 服务</text>
+<text x="114" y="918" font-family="Microsoft YaHei, sans-serif" font-size="31" font-weight="400" fill="#193A50">仅 CAP_NET_RAW；读取本机入站 TCP SYN</text>
+<text x="114" y="961" font-family="Microsoft YaHei, sans-serif" font-size="31" font-weight="400" fill="#193A50">来源 IP / 目标 IP / 端口 / 时间 → 聚合窗口与风险</text>
+<polyline points="1050,890 1210,890 1210,760" fill="none" stroke="#087F96" stroke-width="6"/>
+<polygon points="1210,760 1218.1552090611915,778.2617788062462 1201.8447909388085,778.2617788062462" fill="#087F96"/>
+<text x="1280" y="900" font-family="Microsoft YaHei, sans-serif" font-size="30" font-weight="400" fill="#087F96">只存元数据，不保存报文内容</text>
+<text x="1280" y="955" font-family="Microsoft YaHei, sans-serif" font-size="30" font-weight="400" fill="#087F96">主应用仍为普通用户，无抓包权限</text>
+<rect x="40" y="1110" width="2320" height="335" rx="22" fill="#EFF7FA" stroke="#DCE6ED" stroke-width="3"/>
+<text x="75" y="1162" font-family="Microsoft YaHei, sans-serif" font-size="34" font-weight="700" fill="#087F96">课程实验网 · 已登记目标 / 发往 DEV 的入站连接</text>
+<rect x="90" y="1190" width="1060" height="180" rx="22" fill="#FFFFFF" stroke="#DCE6ED" stroke-width="3"/>
+<text x="114" y="1254" font-family="Microsoft YaHei, sans-serif" font-size="40" font-weight="700" fill="#12304B">路由候选地址 × 4</text>
+<text x="114" y="1308" font-family="Microsoft YaHei, sans-serif" font-size="31" font-weight="400" fill="#193A50">SNMP v2c：接口、路由、IP / 掩码、计数器</text>
+<text x="114" y="1351" font-family="Microsoft YaHei, sans-serif" font-size="31" font-weight="400" fill="#193A50">课程未开放 SET / TRAP；候选数不等于物理设备数</text>
+<rect x="1280" y="1190" width="1030" height="180" rx="22" fill="#FFFFFF" stroke="#DCE6ED" stroke-width="3"/>
+<text x="1304" y="1254" font-family="Microsoft YaHei, sans-serif" font-size="40" font-weight="700" fill="#12304B">测试主机 × 3</text>
+<text x="1304" y="1308" font-family="Microsoft YaHei, sans-serif" font-size="31" font-weight="400" fill="#193A50">ping / 指定端口；受控 iperf3 仅 host-1、host-2</text>
+<text x="1304" y="1351" font-family="Microsoft YaHei, sans-serif" font-size="31" font-weight="400" fill="#193A50">被动监测只覆盖 DEV 三个本机地址，不覆盖全网</text>
+<polyline points="1930,760 1930,1060 620,1060 620,1190" fill="none" stroke="#087F96" stroke-width="6"/>
+<polygon points="620,1190 611.8447909388086,1171.7382211937538 628.1552090611914,1171.7382211937538" fill="#087F96"/>
+<text x="760" y="1103" font-family="Microsoft YaHei, sans-serif" font-size="30" font-weight="400" fill="#087F96">SNMP / ping / 受控任务</text>
+<polyline points="1930,1060 2180,1060 2180,1190" fill="none" stroke="#087F96" stroke-width="6"/>
+<polygon points="2180,1190 2171.8447909388087,1171.7382211937538 2188.1552090611913,1171.7382211937538" fill="#087F96"/>
+<polyline points="210,1110 210,980" fill="none" stroke="#087F96" stroke-width="6"/>
+<polygon points="210,980 218.1552090611914,998.2617788062462 201.8447909388086,998.2617788062462" fill="#087F96"/>
+<text x="250" y="1075" font-family="Microsoft YaHei, sans-serif" font-size="30" font-weight="400" fill="#087F96">入站 SYN</text>
 </svg>

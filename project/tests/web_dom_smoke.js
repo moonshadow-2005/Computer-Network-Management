@@ -74,7 +74,7 @@ async function main() {
   }));
   const taskId = 'task-live-12345678';
   const state = {failPing:false, failMetrics:false, failConfigDiff:false, failTaskCancel:true, failCollect:false,
-    failHealth:false, failAuth:false,
+    failHealth:false, failAuth:false, failScan:false, scanSensors:[],
     health:{live_enabled:true,service_probe_enabled:true,iperf3_enabled:true},
     baselineItems:[{device_id:'host-1',port:22,allowed:true,note:'course SSH service',data_source:'configured'}],
     failRoutes:false, deferNextRoutes:false, routeDeferredStarted:false, routeGate:null, trafficRequest:null,
@@ -93,6 +93,15 @@ async function main() {
       if (state.failHealth) throw new Error('fixture health failure');
       return reply(state.health);
     }
+    if (path.endsWith('/security/scan-status')) {
+      if (state.failScan) throw new Error('fixture scan failure');
+      return reply({items:state.scanSensors,note:'没有告警也不等于没有扫描。'});
+    }
+    if (path.endsWith('/security/scan-windows')) return reply({items:[{
+      source_ip:'198.51.100.20',source_scope:'external',target_ip:'192.168.0.100',
+      window_start:'2026-11-15T01:00:00Z',window_seconds:60,port_count:8,ports:[20,21,22,23,24,25,26,27],
+      ports_truncated:false,syn_packets:8,active_minutes:1,last_seen:'2026-11-15T01:00:05Z',data_source:'sample'}],
+      total:1,note:'构造的扫描窗口，非现场攻击。'});
     if (options.method === 'POST' && state.failAuth) {
       return {ok:false, status:401, json:async () => ({status:'error', error:{message:'invalid admin token'}})};
     }
@@ -249,6 +258,23 @@ async function main() {
     NmsRequest:async (url,options) => {const response=await fetch(url,options);return {response,body:await response.json()};}};
   vm.runInNewContext(fs.readFileSync('app/web/app.js', 'utf8'), context);
   await new Promise(resolve => setTimeout(resolve, 20));
+  assert.match(elements.get('scan-summary').textContent,/尚未接入.*无法判断/);
+  assert.match(elements.get('scan-windows').textContent,/198\.51\.100\.20.*配置网段外.*演示样例/);
+  state.scanSensors = [{sensor_id:'demo-sensor',device_id:'dev',data_source:'sample',effective_state:'running',
+    config:{target_addresses:['192.168.0.100'],internal_networks:[],fast_port_threshold:8,slow_port_threshold:20,slow_active_minutes:3},
+    counters:{syn_packets:8,kernel_drops:0,capacity_drops:0,clock_gaps:0},updated_at:'2026-11-15T01:00:06Z',last_packet_at:null}];
+  await elements.get('refresh').handlers.click();
+  assert.match(elements.get('scan-summary').textContent,/真实监听 0\/0.*演示样例不代表现场观测/);
+  state.scanSensors[0].data_source='live';state.scanSensors[0].effective_state='stale';
+  await elements.get('refresh').handlers.click();
+  assert.match(elements.get('scan-sensors').textContent,/心跳过期/);
+  assert.match(elements.get('scan-summary').textContent,/真实监听 0\/1/);
+  state.failScan=true;
+  await elements.get('refresh').handlers.click();
+  assert.match(elements.get('scan-summary').textContent,/状态未知.*不能据此判断没有扫描/);
+  assert.equal(elements.get('scan-sensors').textContent,'');
+  state.failScan=false;state.scanSensors=[];
+  await elements.get('refresh').handlers.click();
 
   assert.equal(context.preferredObservation([
     {interface_id:'lo',description:'lo',data_source:'live',oper_status:'up'},

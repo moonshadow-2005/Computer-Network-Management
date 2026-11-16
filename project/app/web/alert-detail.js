@@ -22,6 +22,13 @@ const names = {
   possible_telnet_service_tcp_23:'TCP/23 开放，需核实明文管理服务',
 };
 const fieldNames = {
+  sensor_id:'监听点',session_id:'监听会话',source_ip:'观测到的来源 IP',target_ip:'目标 IP',
+  source_scope:'来源范围（external 为配置网段外）',window_start:'窗口开始（UTC）',window_seconds:'窗口长度（秒）',
+  distinct_ports:'不同端口数（至少）',ports:'目的端口样本',ports_truncated:'端口列表已截断',
+  syn_packets:'SYN 包数（含重传）',active_minutes:'有探测的分钟数',last_fast_window:'最近快速窗口（Unix 秒）',
+  consecutive_fast_windows:'连续命中的一分钟窗口数',sustained:'持续探测线索',coverage:'观测覆盖范围',
+  source_identity_confirmed:'已确认真实来源身份',resolution:'解除依据',
+  quality_gap_at:'最近采集缺口（Unix 秒）',
   summary:'证据摘要', basis:'判断依据', recommendation:'建议操作',
   common_default_credential:'命中常见默认凭据规则', observed_from:'观测位置',
   other_network_exposure_tested:'已测试其他网络的暴露情况', vulnerability_confirmed:'已确认存在漏洞',
@@ -37,7 +44,10 @@ function show(value) {
   if (typeof value === 'object') return JSON.stringify(value, null, 2);
   return String(value);
 }
-function named(value) { return names[value] || show(value); }
+function named(value) {
+  if (String(value).startsWith('tcp_port_scan_')) return '入站 TCP 端口扫描线索';
+  return names[value] || show(value);
+}
 function time(value) { return value ? new Date(value).toLocaleString('zh-CN', {timeZone:'Asia/Shanghai'}) : '未记录'; }
 function fields(root, entries) {
   root.replaceChildren();

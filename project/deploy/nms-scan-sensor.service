@@ -1,0 +1,33 @@
+[Unit]
+Description=Group 2 passive inbound TCP scan sensor
+After=nms-team2.service network.target
+Requires=nms-team2.service
+PartOf=nms-team2.service
+
+[Service]
+Type=simple
+User=nms-team2
+Group=nms-team2
+WorkingDirectory=/opt/nms-team2
+EnvironmentFile=/etc/nms-team2/scan.env
+Environment=PYTHONPATH=/opt/nms-team2
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/usr/bin/python3 -m app.collectors.scan_sensor
+Restart=on-failure
+RestartSec=5
+UMask=0077
+CapabilityBoundingSet=CAP_NET_RAW
+AmbientCapabilities=CAP_NET_RAW
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/nms-team2
+RestrictAddressFamilies=AF_PACKET AF_NETLINK AF_UNIX AF_INET AF_INET6
+LockPersonality=true
+RestrictSUIDSGID=true
+MemoryMax=192M
+CPUQuota=25%
+
+[Install]
+WantedBy=multi-user.target

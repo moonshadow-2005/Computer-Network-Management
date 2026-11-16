@@ -21,6 +21,7 @@ const labels = {live:'真实采集',sample:'演示样例',document:'课程文档
   first_or_previous_invalid_sample:'首次或前值无效',sample_gap:'采样间隔过长',query_failed:'查询失败',source_changed:'来源改变',
   non_increasing_time:'采样时间未递增',agent_restarted:'采集代理重启',counter_discontinuity:'计数器不连续',counter_reset_or_wrap:'计数器复位或回绕'};
 function named(value) {
+  if (String(value).startsWith('tcp_port_scan_')) return '入站 TCP 端口扫描线索';
   if (String(value).startsWith('unexpected_open_tcp_')) return `预期关闭的 TCP/${String(value).slice(20)} 开放`;
   if (String(value).startsWith('high_utilization_')) return `接口持续高利用率：${String(value).slice(17)}`;
   return labels[value] || show(value);
@@ -113,6 +114,23 @@ function riskSummary(item) {
   if (evidence.interface_id) return `接口 ${evidence.interface_id} 利用率达到 ${evidence.threshold_pct ?? '配置的'}% 阈值`;
   if (evidence.port) return `TCP/${evidence.port} 观测状态：${evidence.observed_state || '未知'}；依据服务基线检查`;
   return evidence.basis || '规则触发记录；完整证据见详情';
+}
+function renderScanStatus(data) {
+  const states = {starting:'启动中',running:'监听中',degraded:'采集有丢失或中断',stale:'心跳过期',stopped:'已停止',error:'监听失败'};
+  const live = data.items.filter(item => item.data_source === 'live');
+  const healthy = live.filter(item => item.effective_state === 'running');
+  $('scan-summary').textContent = !data.items.length
+    ? '尚未接入扫描监听，无法判断是否存在外部扫描。'
+    : `真实监听 ${healthy.length}/${live.length} 个在线且无近期已知采集缺口。${data.note}演示样例不代表现场观测。`;
+  table('scan-sensors', ['监听点 / 来源','状态','覆盖地址','内部网段','阈值','最近心跳','最近 SYN','观测 / 丢失'], data.items.map(item => {
+    const c = item.config || {}, counts = item.counters || {};
+    return [`${item.device_id} · ${item.sensor_id} · ${named(item.data_source)}`,
+      `${states[item.effective_state] || '未知'}${item.error ? '：'+item.error : ''}`,
+      (c.target_addresses || []).join('、'), (c.internal_networks || []).join('、') || '未定义；来源归属未知',
+      `60 秒 ≥${c.fast_port_threshold} 端口；15 分钟 ≥${c.slow_port_threshold} 端口 / ≥${c.slow_active_minutes} 个分钟`,
+      localTime(item.updated_at), localTime(item.last_packet_at),
+      `SYN ${counts.syn_packets ?? '未知'}；内核丢失 ${counts.kernel_drops ?? '未知'}；容量丢失 ${counts.capacity_drops ?? '未知'}；时钟/轮询中断 ${counts.clock_gaps ?? '未知'}`];
+  }));
 }
 function table(id, headers, rows) {
   const root = $(id); root.replaceChildren();
@@ -542,11 +560,12 @@ async function refresh(background = false) {
   try {
     const [healthResult, overviewResult, devicesResult, interfacesResult, routesResult, baselinesResult,
       checksResult, risksResult, runsResult, snapshotsResult, topologyResult, tasksResult,
-      addressesResult, discoveriesResult] = await Promise.allSettled([
+      addressesResult, discoveriesResult, scanStatusResult, scanWindowsResult] = await Promise.allSettled([
       api('/health'), api('/overview'), api('/devices'), api('/interfaces?limit=500'), api('/routes?limit=500'),
       api('/service-baselines'), api('/service-checks?limit=30'), api('/risks'),
       api('/collector-runs?limit=10'), api('/config-snapshots?limit=10'), api('/topology'), api('/tasks?limit=10'),
-      api('/interface-addresses?latest=true&limit=500'), api('/network-discoveries?latest=true&limit=500')
+      api('/interface-addresses?latest=true&limit=500'), api('/network-discoveries?latest=true&limit=500'),
+      api('/security/scan-status'), api('/security/scan-windows?matched=true&limit=30')
     ]);
     if (!isCurrent()) return;
     const failures = [];
@@ -636,6 +655,22 @@ async function refresh(background = false) {
       const state = badge(x.state); state.textContent = labels[x.state] || show(x.state);
       return [x.device_id, x.port, localTime(x.observed_at), state, x.error || '—', badge(x.data_source)];
     }), failures);
+    if (scanStatusResult.status === 'fulfilled') renderScanStatus(scanStatusResult.value);
+    else {
+      $('scan-sensors').replaceChildren();
+      failed('scan-summary', scanStatusResult.reason);
+      $('scan-summary').textContent += ' 监听状态未知，不能据此判断没有扫描。';
+      failures.push('扫描监听状态');
+    }
+    renderResource(scanWindowsResult, '扫描窗口', 'scan-windows',
+      ['来源 IP','来源范围','目标 IP','窗口起点 / 时长','端口数 / 列表','SYN / 活跃分钟','最近观测','数据来源'],
+      items => items.map(x => [x.source_ip, {external:'配置网段外',internal:'内部',unknown:'未确认'}[x.source_scope] || '未知',
+        x.target_ip, `${localTime(x.window_start)} / ${x.window_seconds} 秒`,
+        `至少 ${x.port_count}：${x.ports.join('、')}${x.ports_truncated ? '（列表截断）' : ''}`,
+        `${x.syn_packets} / ${x.active_minutes}`, localTime(x.last_seen), badge(x.data_source)]), failures);
+    $('scan-window-note').textContent = scanWindowsResult.status === 'fulfilled'
+      ? (scanWindowsResult.value.note || '仅展示命中阈值的观测窗口。') + ' 未命中不等于没有扫描；对应告警与确认入口见下方风险记录。'
+      : '扫描记录读取失败，当前状态未知。';
     renderResource(risksResult, '风险', 'risks', ['编号', '设备', '规则', '级别', '状态', '最近', '证据摘要', '来源', '详情'],
       items => items.map(x => [x.risk_id, x.device_id, named(x.rule_id),
         named(x.level), badge(x.state), localTime(x.last_seen), alertSummary(riskSummary(x)), badge(x.data_source),

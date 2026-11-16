@@ -5,7 +5,7 @@
   "text_overflow": 0,
   "markdown_technical_note_blocks": 15,
   "markdown_local_links_valid": true,
-  "markdown_question_count": 157,
+  "markdown_question_count": 170,
   "architecture_embedded_as_one_image": true,
   "all_used_screenshots_embedded_unchanged": true,
   "speaker_notes_all_slides": true,
@@ -29,7 +29,20 @@
   ],
   "browser_csv_matches_historical_task": true,
   "timeout_then_real_refresh_verified": true,
-  "production_js_matches_worktree": true,
+  "production_files_match_scan_deployment_record": true,
+  "scan_browser_passed": true,
+  "scan_stability_record_passed": true,
+  "scan_observation_connection_errors": [
+    "TimeoutError"
+  ],
+  "scan_observation_states": [
+    "running",
+    "stale",
+    "running",
+    "running"
+  ],
+  "scan_screenshot_captured_at": "2026-11-15T02:34:38.506029+00:00",
+  "historical_browser_evidence_preserved": true,
   "browser_js_exceptions": 0,
   "incidental_http_failures": [
     {
@@ -39,24 +52,24 @@
   ],
   "artifacts": {
     "第2组_网络管理系统_中期汇报.pptx": {
-      "bytes": 1158391,
-      "sha256": "8cf4c385531125323333254789cb9c4397eeafea3fd76d007473d2124c34a343"
+      "bytes": 1245892,
+      "sha256": "e138c1cf93fdb13b874813a9f395f44b65beae0d5f3e6c7c06e84200505733ea"
     },
     "第2组_网络管理系统_中期汇报.pdf": {
-      "bytes": 1248388,
-      "sha256": "f92b88937722be69531d6ecae521a43ddc0de4b448c98a61f263f809c3603592"
+      "bytes": 1318722,
+      "sha256": "d6e9e19f283dc883ba58ff4c8a880a8eb25b0c29910de1fb3808339001d7f6c7"
     },
     "中期汇报_讲解稿.md": {
-      "bytes": 79550,
-      "sha256": "ba97ae462270b5c71b9e7a67cb7f42cdff3c61f6e12c93b0e045ede1ece11c28"
+      "bytes": 87935,
+      "sha256": "cb8ca68fa7d28166f36781ac9e38fae6ea99018684d5be1f7f34ed5685bce643"
     },
     "项目架构图.png": {
-      "bytes": 315026,
-      "sha256": "d897d1e86b5079374938caa7b3b47bd8b69c731ef801093de397ab349533bce6"
+      "bytes": 367163,
+      "sha256": "88b7814ff50085fe2a6934537550685e5374e434afca376ca432c2d9b8607faf"
     },
     "项目架构图.svg": {
-      "bytes": 8493,
-      "sha256": "a0554981ae2d81adc1c7d858dda48bb40d2d7aaff686989721b67deafb197c58"
+      "bytes": 9481,
+      "sha256": "3e1e792a2bde88ee40eaa76028e45c56096c6fce3d9cfca7dca12a5a3a949c3a"
     }
   }
 }

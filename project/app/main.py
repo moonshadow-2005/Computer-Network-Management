@@ -5,6 +5,7 @@ import csv
 import hmac
 import io
 import os
+import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -23,6 +24,7 @@ from app.modules.perf_accounting import pair_traffic_report, traffic_report
 from app.modules.discovery import topology as discovered_topology
 from app.modules.diagnostics import diagnose
 from app.modules.security import check_tcp, record_service_check
+from app.modules.scan_detection import scan_status
 from app.service import CollectorService
 
 
@@ -131,7 +133,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         yield
         service.stop()
 
-    app = FastAPI(title="第 2 组网络管理系统", version="0.3.0", lifespan=lifespan)
+    app = FastAPI(title="第 2 组网络管理系统", version="0.4.0", lifespan=lifespan)
     app.state.database = database
     app.state.collector = service
     app.state.tasks = tasks
@@ -536,6 +538,24 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def service_checks(device_id: str | None = None, limit: int = Query(100, ge=1, le=500),
                        offset: int = Query(0, ge=0)):
         return reply(_list(database, "service_checks", {"device_id": device_id}, limit, offset, "check_id DESC"))
+
+    @app.get("/api/v1/security/scan-status")
+    async def scan_sensor_status():
+        return reply(scan_status(database, time.time()))
+
+    @app.get("/api/v1/security/scan-windows")
+    async def scan_windows(sensor_id: str | None = None, source_scope: str | None = None,
+                           matched: bool | None = None, limit: int = Query(30, ge=1, le=500),
+                           offset: int = Query(0, ge=0)):
+        if source_scope not in (None, "internal", "external", "unknown"):
+            raise HTTPException(422, "invalid source scope")
+        result = _list(database, "scan_windows", {"sensor_id": sensor_id, "source_scope": source_scope,
+                       "matched": int(matched) if matched is not None else None}, limit, offset,
+                       "last_seen DESC,window_id DESC")
+        for item in result["items"]:
+            item["ports"] = decode(item["ports"], [])
+        result["note"] = "最近 24 小时、最多 5000 个聚合窗口；SYN 数含重传，端口列表最多显示 32 个。历史风险证据独立保留。"
+        return reply(result)
 
     @app.get("/api/v1/risks")
     async def risks(device_id: str | None = None, state: str | None = None,

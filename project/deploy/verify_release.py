@@ -9,7 +9,7 @@ import tarfile
 ALLOWED_ROOTS = {
     "app", "vendor", "nms-team2.service", "install_dev_release.sh",
     "upgrade_dev_release.sh", "verify_release.py", "restore_dev_database.py", "systemd_state.sh",
-    "requirements-runtime.lock",
+    "requirements-runtime.lock", "nms-scan-sensor.service", "scan.env.example",
 }
 REQUIRED = {
     "app/main.py", "app/web/index.html", "vendor/fastapi/__init__.py",

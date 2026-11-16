@@ -33,8 +33,24 @@ assert final['passed'] and final['final_scripts_loaded'] and final['risk_detail_
 assert set(final['desktop_views'])==views and set(final['mobile_views'])==views
 assert final['mobile_no_overflow'] and final['methods']==['GET'] and not final['exceptions']
 assert final['auth']=='本机管理员已连接'
-for name,digest in final['sha256'].items():
-    assert hashlib.sha256((ROOT.parent/'project/app/web'/name).read_bytes()).hexdigest()==digest
+# Earlier browser records remain historical; verify current code against the later deployment.
+scan_work=ROOT.parent/'project/data/scan-review'
+scan=json.loads((scan_work/'browser-results.json').read_text())
+remote=json.loads((scan_work/'remote-final.json').read_text())
+stability=json.loads((scan_work/'stability-results.json').read_text())
+assert scan['passed'] and scan['mobile_no_overflow'] and scan['live_heartbeat_advanced']
+assert set(scan['views'])==views and scan['methods']==['GET'] and not scan['exceptions']
+assert stability['passed']
+assert stability['observations'][-1]['effective_state']=='running'
+assert len({row['session_id'] for row in stability['observations']})==1
+for name,digest in remote['sha256'].items():
+    local=ROOT.parent/'project'/('deploy/'+name if name.endswith('.service') else name)
+    assert hashlib.sha256(local.read_bytes()).hexdigest()==digest,name
+assert (ROOT/'素材/security-scan.png').read_bytes()==(ROOT.parent/'project/docs/images/scan-monitoring/security-desktop.png').read_bytes()
+assert manifest['slides'][10]['assets']==['security-scan.png']
+assert '来源' in manifest['slides'][10]['notes'] and '三十九' in manifest['slides'][10]['notes']
+assert 'schema v4' in (ROOT/'素材/项目架构图.svg').read_text()
+
 for i,item in enumerate(manifest['slides']):
     assert item['notes'] in prs.slides[i].notes_slide.notes_text_frame.text
     assert item['notes'].split('讲解：\n')[1].split('\n\n事实来源：')[0] in guide
@@ -55,7 +71,12 @@ report={'slide_count':15,'planned_seconds':940,'powerpoint_rendered':True,'text_
         'architecture_embedded_as_one_image':True,'all_used_screenshots_embedded_unchanged':True,
         'speaker_notes_all_slides':True,'desktop_views':sorted(views),'mobile_views':sorted(views),
         'browser_csv_matches_historical_task':True,'timeout_then_real_refresh_verified':True,
-        'production_js_matches_worktree':True,'browser_js_exceptions':0,
+        'production_files_match_scan_deployment_record':True,
+        'scan_browser_passed':True,'scan_stability_record_passed':True,
+        'scan_observation_connection_errors':stability['connection_errors'],
+        'scan_observation_states':[row['effective_state'] for row in stability['observations']],
+        'scan_screenshot_captured_at':scan['captured_at'],
+        'historical_browser_evidence_preserved':True,'browser_js_exceptions':0,
         'incidental_http_failures':final['failed_responses'],
         'artifacts':{p.name:{'bytes':p.stat().st_size,'sha256':hashlib.sha256(p.read_bytes()).hexdigest()}
                      for p in [deck,pdf,ROOT/'中期汇报_讲解稿.md',ROOT/'素材/项目架构图.png',ROOT/'素材/项目架构图.svg']}}
